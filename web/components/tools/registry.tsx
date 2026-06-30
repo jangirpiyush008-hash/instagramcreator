@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactElement } from "react";
 import { EngagementRateView } from "./views/EngagementRateView";
 import { UsernameCheckerView } from "./views/UsernameCheckerView";
 import { BannedHashtagView } from "./views/BannedHashtagView";
@@ -20,7 +21,7 @@ export type ToolViewProps = {
   data?: Record<string, unknown>;
 };
 
-export type ToolView = (props: ToolViewProps) => JSX.Element;
+export type ToolView = (props: ToolViewProps) => ReactElement;
 
 // Map toolId → result-view component. Adding a tool means adding a row here.
 export const VIEWS: Record<string, ToolView> = {
