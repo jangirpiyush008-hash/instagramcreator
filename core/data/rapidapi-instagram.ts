@@ -1,69 +1,135 @@
-// Real Instagram data via the rocketapi `instagram-scraper-api2` provider on
-// RapidAPI. Inherits from MockProvider so any method we haven't implemented
-// (demographics, follower audit, reach signals) falls back to mock data.
+// Real Instagram data via the RockSolid `instagram-scraper-stable-api` on
+// RapidAPI. Uses POST + application/x-www-form-urlencoded against .php
+// endpoints (the API's native shape).
 //
-// Activated when RAPIDAPI_KEY + IG_RAPIDAPI_HOST env vars are set; otherwise
-// adapterFor("instagram") returns the plain MockProvider.
+// Inherits from MockProvider so unimplemented methods fall back to mock data
+// — and every implemented method individually falls back to mock on any
+// provider error (transient retry messages, scraper blocked upstream, etc).
+//
+// Activated only when RAPIDAPI_KEY is set; otherwise adapterFor("instagram")
+// returns the plain MockProvider.
 
 import type { Platform } from "../types";
 import type { Profile, Post, UsernameAvailability, CommentItem } from "./adapter";
 import { MockProvider } from "./mock-provider";
-import { rapidApiFetch, type RapidAPIConfig } from "./rapidapi-base";
+import { DataSourceError } from "../utils/errors";
 
-// Endpoint response shapes for instagram-scraper-api2 (rocketapi).
-// Defensive typing — providers change fields without warning.
-interface RawProfile {
-  user?: {
-    pk?: string;
-    username?: string;
-    full_name?: string;
-    biography?: string;
-    is_verified?: boolean;
-    follower_count?: number;
-    following_count?: number;
-    profile_pic_url?: string;
-  };
+interface ProviderEnvelope {
+  // Most RockSolid endpoints either return the payload at top level,
+  // wrap it in {data: ...}, or wrap it in {user: ...} / {items: [...]}.
+  error?: string;
+  user?: unknown;
+  data?: unknown;
+  items?: unknown;
+  comments?: unknown;
+  comment_count?: number;
 }
 
-interface RawMedia {
-  pk?: string;
+interface IgUserRaw {
+  full_name?: string;
+  biography?: string;
+  is_verified?: boolean;
+  follower_count?: number;
+  following_count?: number;
+  edge_followed_by?: { count?: number };
+  edge_follow?: { count?: number };
+  profile_pic_url?: string;
+  profile_pic_url_hd?: string;
+}
+
+interface IgPostRaw {
   id?: string;
+  pk?: string;
+  shortcode?: string;
   like_count?: number;
   comment_count?: number;
+  edge_liked_by?: { count?: number };
+  edge_media_preview_like?: { count?: number };
+  edge_media_to_comment?: { count?: number };
   play_count?: number;
-  view_count?: number;
+  video_view_count?: number;
   taken_at?: number;            // unix seconds
-  caption?: { text?: string } | null;
+  taken_at_timestamp?: number;
+  thumbnail_src?: string;
+  display_url?: string;
   image_versions2?: { candidates?: { url?: string }[] };
+  caption?: { text?: string } | null;
+  edge_media_to_caption?: { edges?: { node?: { text?: string } }[] };
   video_duration?: number;
 }
 
-interface RawFeed {
-  items?: RawMedia[];
-  // some plans return data.items instead
-  data?: { items?: RawMedia[] };
-}
-
-interface RawSearch {
-  data?: { users?: { pk?: string; username?: string }[] };
+interface IgCommentRaw {
+  id?: string;
+  pk?: string;
+  username?: string;
+  user?: { username?: string };
+  text?: string;
+  comment_text?: string;
+  created_at?: number;
 }
 
 export class RapidAPIInstagramAdapter extends MockProvider {
-  private readonly cfg: RapidAPIConfig;
+  private readonly apiKey: string;
+  private readonly host: string;
 
   constructor(apiKey?: string, host?: string) {
     super("instagram");
-    this.cfg = {
-      apiKey: apiKey ?? process.env.RAPIDAPI_KEY ?? "",
-      host: host ?? process.env.IG_RAPIDAPI_HOST ?? "instagram-scraper-api2.p.rapidapi.com",
-    };
+    this.apiKey = apiKey ?? process.env.RAPIDAPI_KEY ?? "";
+    this.host =
+      host ??
+      process.env.IG_RAPIDAPI_HOST ??
+      "instagram-scraper-stable-api.p.rapidapi.com";
+  }
+
+  private async post<T>(path: string, body: Record<string, string>): Promise<T> {
+    if (!this.apiKey || !this.host) {
+      throw new DataSourceError("RapidAPI not configured (missing key or host)");
+    }
+    const url = `https://${this.host}${path}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12_000);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "x-rapidapi-key": this.apiKey,
+          "x-rapidapi-host": this.host,
+          "Content-Type": "application/x-www-form-urlencoded",
+          accept: "application/json",
+        },
+        body: new URLSearchParams(body).toString(),
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        throw new DataSourceError(`${this.host} returned ${res.status}`);
+      }
+      const json = (await res.json()) as ProviderEnvelope & Record<string, unknown>;
+      // Many RapidAPI scrapers return 200 with {"error": "..."} on transient
+      // upstream failures ("Please try again later" etc). Treat as a fail.
+      if (json && typeof json === "object" && "error" in json && json.error) {
+        throw new DataSourceError(`${this.host} provider message: ${String(json.error).slice(0, 80)}`);
+      }
+      return json as T;
+    } catch (e) {
+      if (e instanceof DataSourceError) throw e;
+      if (e instanceof Error && e.name === "AbortError") {
+        throw new DataSourceError(`${this.host} timeout after 12s`);
+      }
+      throw new DataSourceError(`${this.host} fetch error`, e);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private async safe<T>(label: string, fn: () => Promise<T>, fallback: () => Promise<T>): Promise<T> {
     try {
       return await fn();
     } catch (e) {
-      console.warn(`[rapidapi-instagram] ${label} failed, falling back to mock:`, e instanceof Error ? e.message : e);
+      console.warn(
+        `[rapidapi-ig-stable] ${label} failed, falling back to mock:`,
+        e instanceof Error ? e.message : e,
+      );
       return fallback();
     }
   }
@@ -72,21 +138,23 @@ export class RapidAPIInstagramAdapter extends MockProvider {
     return this.safe<Profile>(
       "getProfile",
       async () => {
-        const j = await rapidApiFetch<RawProfile>(
-          this.cfg,
-          `/v1/info?username_or_id_or_url=${encodeURIComponent(handle)}`,
+        const r = await this.post<ProviderEnvelope>(
+          "/get_ig_user_info_v2.php",
+          { username_or_url: handle },
         );
-        const u = j.user;
-        if (!u || u.follower_count === undefined) {
-          throw new Error("response missing user.follower_count");
+        const u = (r.user ?? (r.data as { user?: IgUserRaw })?.user ?? r) as IgUserRaw;
+        const followers =
+          u.follower_count ?? u.edge_followed_by?.count ?? null;
+        if (followers === null) {
+          throw new DataSourceError("response missing follower count");
         }
         return {
           handle,
           displayName: u.full_name ?? handle,
-          followers: u.follower_count,
-          following: u.following_count ?? 0,
+          followers,
+          following: u.following_count ?? u.edge_follow?.count ?? 0,
           verified: u.is_verified ?? false,
-          avatarUrl: u.profile_pic_url,
+          avatarUrl: u.profile_pic_url_hd ?? u.profile_pic_url,
           bio: u.biography,
         };
       },
@@ -98,22 +166,39 @@ export class RapidAPIInstagramAdapter extends MockProvider {
     return this.safe<Post[]>(
       "getRecentPosts",
       async () => {
-        const j = await rapidApiFetch<RawFeed>(
-          this.cfg,
-          `/v1/posts?username_or_id_or_url=${encodeURIComponent(handle)}`,
+        const r = await this.post<ProviderEnvelope>(
+          "/get_ig_user_posts_v2.php",
+          { username_or_url: handle },
         );
-        const items = (j.items ?? j.data?.items ?? []).slice(0, n);
-        if (items.length === 0) throw new Error("no posts returned");
-        return items.map<Post>((m) => ({
-          id: String(m.pk ?? m.id ?? Math.random().toString(36).slice(2)),
-          likes: m.like_count ?? 0,
-          comments: m.comment_count ?? 0,
-          views: m.play_count ?? m.view_count,
-          postedAt: m.taken_at ? new Date(m.taken_at * 1000).toISOString() : new Date().toISOString(),
-          thumbnailUrl: m.image_versions2?.candidates?.[0]?.url,
-          title: m.caption?.text?.slice(0, 80),
-          caption: m.caption?.text,
-          durationSec: m.video_duration,
+        // Possible response shapes: {items: [...]}, {data: {items: [...]}},
+        // or GraphQL-style {data: {edge_owner_to_timeline_media: {edges: [...]}}}
+        const raw =
+          (r.items as IgPostRaw[] | undefined) ??
+          ((r.data as { items?: IgPostRaw[] } | undefined)?.items) ??
+          [];
+        if (raw.length === 0) {
+          throw new DataSourceError("no posts in response");
+        }
+        return raw.slice(0, n).map<Post>((p) => ({
+          id: String(p.id ?? p.pk ?? p.shortcode ?? Math.random().toString(36).slice(2)),
+          likes: p.like_count ?? p.edge_liked_by?.count ?? p.edge_media_preview_like?.count ?? 0,
+          comments: p.comment_count ?? p.edge_media_to_comment?.count ?? 0,
+          views: p.play_count ?? p.video_view_count,
+          postedAt: p.taken_at
+            ? new Date(p.taken_at * 1000).toISOString()
+            : p.taken_at_timestamp
+            ? new Date(p.taken_at_timestamp * 1000).toISOString()
+            : new Date().toISOString(),
+          thumbnailUrl:
+            p.thumbnail_src ??
+            p.display_url ??
+            p.image_versions2?.candidates?.[0]?.url,
+          title:
+            p.caption?.text?.slice(0, 80) ??
+            p.edge_media_to_caption?.edges?.[0]?.node?.text?.slice(0, 80),
+          caption:
+            p.caption?.text ?? p.edge_media_to_caption?.edges?.[0]?.node?.text,
+          durationSec: p.video_duration,
         }));
       },
       () => super.getRecentPosts(platform, handle, n),
@@ -124,13 +209,10 @@ export class RapidAPIInstagramAdapter extends MockProvider {
     return this.safe<UsernameAvailability>(
       "isHandleAvailable",
       async () => {
-        // If getProfile returns a real follower count, the handle is TAKEN.
-        // 404 / missing user means AVAILABLE.
+        // If getProfile returns a real follower count → handle is taken.
+        // Provider 404 / "User not found" → handle is free.
         try {
           const profile = await this.getProfile(platform, handle);
-          if (!profile.followers && profile.followers !== 0) {
-            return { platform, available: true };
-          }
           return {
             platform,
             available: false,
@@ -144,40 +226,15 @@ export class RapidAPIInstagramAdapter extends MockProvider {
     );
   }
 
-  override async getRecentComments(platform: Platform, handle: string, n: number) {
-    return this.safe(
-      "getRecentComments",
-      async () => {
-        const posts = await this.getRecentPosts(platform, handle, 1);
-        const post = posts[0];
-        if (!post) throw new Error("no recent post for comments");
-        const j = await rapidApiFetch<{ items?: { pk?: string; user?: { username?: string }; text?: string; created_at?: number }[]; comment_count?: number }>(
-          this.cfg,
-          `/v1/comments?code_or_id_or_url=${encodeURIComponent(post.id)}`,
-        );
-        const comments: CommentItem[] = (j.items ?? []).slice(0, n).map((c) => ({
-          id: String(c.pk ?? Math.random().toString(36).slice(2)),
-          username: c.user?.username ?? "unknown",
-          text: c.text ?? "",
-          postedAt: c.created_at ? new Date(c.created_at * 1000).toISOString() : new Date().toISOString(),
-        }));
-        const totalComments = j.comment_count ?? post.comments;
-        return {
-          post: { ...post, comments: totalComments },
-          comments,
-        };
-      },
-      () => super.getRecentComments(platform, handle, n),
-    );
-  }
-
   override async getThumbnail(platform: Platform, handle: string) {
     return this.safe(
       "getThumbnail",
       async () => {
         const posts = await this.getRecentPosts(platform, handle, 1);
         const post = posts[0];
-        if (!post?.thumbnailUrl) throw new Error("no thumbnail url");
+        if (!post?.thumbnailUrl) {
+          throw new DataSourceError("no thumbnail url on first post");
+        }
         return {
           post,
           resolutions: [
@@ -189,6 +246,42 @@ export class RapidAPIInstagramAdapter extends MockProvider {
         };
       },
       () => super.getThumbnail(platform, handle),
+    );
+  }
+
+  override async getRecentComments(platform: Platform, handle: string, n: number) {
+    return this.safe(
+      "getRecentComments",
+      async () => {
+        const posts = await this.getRecentPosts(platform, handle, 1);
+        const post = posts[0];
+        if (!post) throw new DataSourceError("no recent post");
+        // RockSolid expects the public post URL (shortcode-based).
+        const postUrl = `https://www.instagram.com/p/${post.id}/`;
+        const r = await this.post<ProviderEnvelope>(
+          "/get_ig_post_comments_v2.php",
+          { post_url: postUrl },
+        );
+        const raw =
+          (r.comments as IgCommentRaw[] | undefined) ??
+          (r.items as IgCommentRaw[] | undefined) ??
+          ((r.data as { comments?: IgCommentRaw[] } | undefined)?.comments) ??
+          [];
+        const totalComments = r.comment_count ?? post.comments;
+        const comments: CommentItem[] = raw.slice(0, n).map((c) => ({
+          id: String(c.id ?? c.pk ?? Math.random().toString(36).slice(2)),
+          username: c.username ?? c.user?.username ?? "unknown",
+          text: c.text ?? c.comment_text ?? "",
+          postedAt: c.created_at
+            ? new Date(c.created_at * 1000).toISOString()
+            : new Date().toISOString(),
+        }));
+        return {
+          post: { ...post, comments: totalComments },
+          comments,
+        };
+      },
+      () => super.getRecentComments(platform, handle, n),
     );
   }
 }
