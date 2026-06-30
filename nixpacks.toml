@@ -1,0 +1,16 @@
+# Explicit Railway / Nixpacks build config.
+# Without this, Nixpacks tries to auto-detect and sometimes gets confused by
+# the app/ + web/ + core/ folder layout. This pins Node 20 and the exact
+# install / build / start commands so deploys are deterministic.
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm ci --no-audit --no-fund"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm start"
