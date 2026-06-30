@@ -1,0 +1,53 @@
+import "./globals.css";
+import type { Metadata, Viewport } from "next";
+import Link from "next/link";
+
+export const metadata: Metadata = {
+  title: "DecodeCreator — audience analytics for any public Instagram or TikTok account",
+  description:
+    "Engagement, audience quality, fake-follower share, demographics — for any public Instagram or TikTok account. Public data only, the account is never notified.",
+  metadataBase: new URL("https://decodecreator.com"),
+  openGraph: {
+    title: "DecodeCreator — audience analytics for any public Instagram or TikTok account",
+    description: "Public-data analytics for creators and brands.",
+    url: "https://decodecreator.com",
+    siteName: "DecodeCreator",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#0a0a12",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en" className="dark">
+      <body>
+        <div className="min-h-screen flex flex-col">
+          <header className="sticky top-0 z-30 backdrop-blur-md bg-background/60 border-b border-border/60">
+            <div className="container py-4 flex items-center justify-between">
+              <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
+                <span className="h-7 w-7 rounded-lg bg-gradient-ig" aria-hidden />
+                <span>DecodeCreator</span>
+              </Link>
+              <nav className="text-sm text-muted-foreground flex gap-5">
+                <Link href="/account" className="hover:text-foreground transition-colors">
+                  Account
+                </Link>
+              </nav>
+            </div>
+          </header>
+          <main className="flex-1">{children}</main>
+          <footer className="border-t border-border/60 text-xs text-muted-foreground">
+            <div className="container py-6 flex flex-wrap gap-4 justify-between">
+              <span>© DecodeCreator. Public-data analytics for creators and brands. Instagram + TikTok.</span>
+              <span>Public data only — the account is never notified.</span>
+            </div>
+          </footer>
+        </div>
+      </body>
+    </html>
+  );
+}
