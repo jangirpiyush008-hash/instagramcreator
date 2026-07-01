@@ -163,7 +163,7 @@ export class RapidAPIInstagramAdapter extends MockProvider {
         // username; the API resolves it to an internal id itself.
         const r = await this.post<ProviderEnvelope>(
           "/ig_get_fb_profile_v3.php",
-          { username: handle },
+          { username_or_url: handle },
         );
         const u = (r.user ?? (r.data as { user?: IgUserRaw })?.user ?? r) as IgUserRaw;
         const followers =
@@ -199,7 +199,7 @@ export class RapidAPIInstagramAdapter extends MockProvider {
         // "User Posts" endpoint — no v2 suffix per the RockSolid docs.
         const r = await this.post<ProviderEnvelope>(
           "/get_ig_user_posts.php",
-          { username: handle },
+          { username_or_url: handle },
         );
         // RockSolid /get_ig_user_posts.php returns:
         //   { posts: [{ node: {...} }, ...], pagination_token }
