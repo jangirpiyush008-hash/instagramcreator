@@ -18,20 +18,8 @@ import { RapidAPITikTokAdapter } from "./rapidapi-tiktok";
 // To swap providers later, change only this file — tools never see the change.
 
 export function adapterFor(platform: Platform): DataAdapter {
-  const rawKey = process.env.RAPIDAPI_KEY ?? "";
-  const hasRapidApi = rawKey.trim().length > 0;
-  // Diagnostic — one line per adapter selection so we can see in Deploy Logs
-  // whether the router is picking real vs mock, and why. Safe to log: reveals
-  // only whether a key is present and the platform, never the key itself.
-  console.warn(
-    `[router] platform=${platform} hasRapidApi=${hasRapidApi} keyLen=${rawKey.length} host=${
-      platform === "instagram"
-        ? process.env.IG_RAPIDAPI_HOST ?? "(unset)"
-        : platform === "tiktok"
-        ? process.env.TIKTOK_RAPIDAPI_HOST ?? "(unset)"
-        : "(n/a)"
-    }`,
-  );
+  // Trim whitespace so a stray newline from copy-paste doesn't disable RapidAPI.
+  const hasRapidApi = (process.env.RAPIDAPI_KEY ?? "").trim().length > 0;
 
   switch (platform) {
     case "youtube":
