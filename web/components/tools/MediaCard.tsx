@@ -70,6 +70,16 @@ export function MediaCard({ platform, handle, post, selectable, selected, onTogg
     filename: `${downloadName}.mp4`,
     download: true,
   });
+  // YouTube: no direct videoUrl (see adapter comment). If the operator has
+  // configured a third-party downloader (YT_DOWNLOAD_HOST env var), enable
+  // the MP4 button here — the /api/download/youtube route resolves a fresh
+  // provider URL on click and either 302s or streams the file. If not
+  // configured, the button stays hidden and we fall back to the "Watch on
+  // YouTube" affordance.
+  const ytDownload =
+    platform === "youtube" && !hasVideo && post.id
+      ? `/api/download/youtube?videoId=${encodeURIComponent(post.id)}&stream=1`
+      : undefined;
   const caption = post.caption ?? post.title;
   const duration = formatDuration(post.durationSec);
   const likes = formatCount(post.likes);
@@ -210,6 +220,15 @@ export function MediaCard({ platform, handle, post, selectable, selected, onTogg
             className="text-xs rounded-md bg-gradient-ig text-white px-3 py-1.5 hover:opacity-90 transition"
           >
             ⬇ Video (MP4)
+          </a>
+        )}
+        {ytDownload && (
+          <a
+            href={ytDownload}
+            className="text-xs rounded-md bg-gradient-yt text-white px-3 py-1.5 hover:opacity-90 transition"
+            title="Downloaded via a third-party service — see disclaimer below the gallery"
+          >
+            ⬇ MP4 (3rd-party)
           </a>
         )}
         {post.permalink && (

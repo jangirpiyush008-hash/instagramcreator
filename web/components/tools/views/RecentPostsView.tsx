@@ -45,12 +45,22 @@ async function bulkDownload(
 ) {
   for (let i = 0; i < posts.length; i++) {
     const p = posts[i]!;
-    const url = p.videoUrlHd ?? p.videoUrl ?? p.thumbnailUrlHd ?? p.thumbnailUrl;
-    if (!url) continue;
-    const isVideo = Boolean(p.videoUrlHd ?? p.videoUrl);
-    const ext = isVideo ? "mp4" : "jpg";
-    const filename = `${platform}-${handle}-${p.id ?? `post-${i}`}.${ext}`;
-    const href = proxyMediaUrl(url, { filename, download: true });
+    // On YouTube, we don't have a direct videoUrl (see the adapter comment).
+    // Route through the third-party downloader endpoint instead, which
+    // resolves a fresh URL per click.
+    let href: string | undefined;
+    let filename: string;
+    if (platform === "youtube" && !p.videoUrl && !p.videoUrlHd && p.id) {
+      filename = `youtube-${handle}-${p.id}.mp4`;
+      href = `/api/download/youtube?videoId=${encodeURIComponent(p.id)}&stream=1`;
+    } else {
+      const url = p.videoUrlHd ?? p.videoUrl ?? p.thumbnailUrlHd ?? p.thumbnailUrl;
+      if (!url) continue;
+      const isVideo = Boolean(p.videoUrlHd ?? p.videoUrl);
+      const ext = isVideo ? "mp4" : "jpg";
+      filename = `${platform}-${handle}-${p.id ?? `post-${i}`}.${ext}`;
+      href = proxyMediaUrl(url, { filename, download: true });
+    }
     if (!href) continue;
     const a = document.createElement("a");
     a.href = href;
@@ -60,7 +70,9 @@ async function bulkDownload(
     a.click();
     document.body.removeChild(a);
     // Small delay between clicks so the browser queues them cleanly.
-    await new Promise((r) => setTimeout(r, 350));
+    // YouTube provider calls take longer (fresh URL per click), so bump the
+    // gap so we don't fire 30 provider requests inside a second.
+    await new Promise((r) => setTimeout(r, platform === "youtube" ? 1200 : 350));
   }
 }
 
@@ -244,6 +256,18 @@ export function RecentPostsView({ handle, platform, data, params, onParamsChange
         blocks multiple downloads, allow them once and the rest will flow through. Everything streams
         through our proxy so CDN hotlink protection can&apos;t interfere.
       </div>
+
+      {platform === "youtube" && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-5 text-sm">
+          <div className="font-medium text-amber-200 mb-1">Third-party service disclaimer</div>
+          <p className="text-muted-foreground">
+            YouTube MP4 downloads are resolved via a third-party service (configured through
+            <code className="mx-1 px-1.5 py-0.5 rounded bg-black/30 text-xs">YT_DOWNLOAD_HOST</code>
+            on our server). YouTube&apos;s Terms of Service restrict downloading — this feature is
+            provided at your own discretion. Use only for content you have the right to save.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
