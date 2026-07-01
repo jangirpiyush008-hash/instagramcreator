@@ -15,12 +15,15 @@ import { MockProvider } from "./mock-provider";
 import { DataSourceError, PrivateAccountError } from "../utils/errors";
 
 interface ProviderEnvelope {
-  // Most RockSolid endpoints either return the payload at top level,
-  // wrap it in {data: ...}, or wrap it in {user: ...} / {items: [...]}.
+  // RockSolid endpoints wrap payloads inconsistently:
+  //   /ig_get_fb_profile_v3.php  → { user: {...} } or the user fields at root
+  //   /get_ig_user_posts.php     → { posts: [{ node: {...} }], pagination_token }
+  //   /get_post_comments.php     → { comments: [...] } or { items: [...] }
   error?: string;
   user?: unknown;
   data?: unknown;
   items?: unknown;
+  posts?: { node?: unknown }[];
   comments?: unknown;
   comment_count?: number;
 }
@@ -41,6 +44,7 @@ interface IgUserRaw {
 interface IgPostRaw {
   id?: string;
   pk?: string;
+  code?: string;                // RockSolid uses `code` for the shortcode
   shortcode?: string;
   like_count?: number;
   comment_count?: number;
@@ -57,6 +61,8 @@ interface IgPostRaw {
   caption?: { text?: string } | null;
   edge_media_to_caption?: { edges?: { node?: { text?: string } }[] };
   video_duration?: number;
+  // RockSolid nests the author under user with is_private / is_verified
+  user?: { username?: string; is_private?: boolean; is_verified?: boolean };
 }
 
 interface IgCommentRaw {
@@ -195,17 +201,26 @@ export class RapidAPIInstagramAdapter extends MockProvider {
           "/get_ig_user_posts.php",
           { username: handle },
         );
-        // Possible response shapes: {items: [...]}, {data: {items: [...]}},
-        // or GraphQL-style {data: {edge_owner_to_timeline_media: {edges: [...]}}}
-        const raw =
+        // RockSolid /get_ig_user_posts.php returns:
+        //   { posts: [{ node: {...} }, ...], pagination_token }
+        // Some other providers use {items: [...]} — handle both.
+        const raw: IgPostRaw[] =
+          (r.posts?.map((p) => p.node).filter(Boolean) as IgPostRaw[]) ??
           (r.items as IgPostRaw[] | undefined) ??
           ((r.data as { items?: IgPostRaw[] } | undefined)?.items) ??
           [];
         if (raw.length === 0) {
           throw new DataSourceError("no posts in response");
         }
+        // If any post shows the author account as private, refuse the scan —
+        // don't leak metrics from a private profile.
+        const firstAuthor = raw[0]?.user;
+        if (firstAuthor?.is_private === true) {
+          throw new PrivateAccountError(handle, "instagram");
+        }
         return raw.slice(0, n).map<Post>((p) => ({
-          id: String(p.id ?? p.pk ?? p.shortcode ?? Math.random().toString(36).slice(2)),
+          // RockSolid: pk = numeric id, code = shortcode (for building /p/{code}/ urls)
+          id: String(p.code ?? p.shortcode ?? p.pk ?? p.id ?? Math.random().toString(36).slice(2)),
           likes: p.like_count ?? p.edge_liked_by?.count ?? p.edge_media_preview_like?.count ?? 0,
           comments: p.comment_count ?? p.edge_media_to_comment?.count ?? 0,
           views: p.play_count ?? p.video_view_count,
