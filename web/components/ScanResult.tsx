@@ -150,6 +150,23 @@ function LiveScan({
         </div>
       );
     }
+    // Account not found — the provider returned a different profile than
+    // requested (fuzzy-match fallback), so we refused rather than show
+    // wrong-account data.
+    if (state.code === "not_found") {
+      return (
+        <div className="rounded-2xl border border-border bg-card/60 p-8 text-center space-y-3">
+          <div className="text-4xl">🔍</div>
+          <h3 className="text-xl font-semibold">Account not found</h3>
+          <p className="text-muted-foreground max-w-md mx-auto">
+            {state.message}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Tip: copy the exact handle from the profile URL — capitalization and dots/underscores matter.
+          </p>
+        </div>
+      );
+    }
     const isComingSoon = state.code === "not_implemented";
     return (
       <div className="space-y-6">

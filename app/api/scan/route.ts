@@ -14,7 +14,9 @@ import { regionFromHeaders } from "@/core/utils/region";
 import { hashIp, getClientIp } from "@/core/utils/hash";
 import {
   DataSourceError,
+  HandleNotFoundError,
   NotImplementedError,
+  PrivateAccountError,
   RateLimitError,
 } from "@/core/utils/errors";
 
@@ -127,6 +129,18 @@ export async function POST(req: Request) {
           code: "not_implemented",
         },
         { status: 501 },
+      );
+    }
+    if (e instanceof HandleNotFoundError) {
+      return NextResponse.json(
+        { ok: false, error: e.message, code: "not_found" },
+        { status: 404 },
+      );
+    }
+    if (e instanceof PrivateAccountError) {
+      return NextResponse.json(
+        { ok: false, error: e.message, code: "private_account" },
+        { status: 422 },
       );
     }
     if (e instanceof DataSourceError) {

@@ -5,7 +5,7 @@ import type { Platform } from "../types";
 import type { Profile, Post, UsernameAvailability, CommentItem } from "./adapter";
 import { MockProvider } from "./mock-provider";
 import { rapidApiFetch, type RapidAPIConfig } from "./rapidapi-base";
-import { PrivateAccountError } from "../utils/errors";
+import { HandleNotFoundError, PrivateAccountError } from "../utils/errors";
 
 interface RawUserInfo {
   data?: {
@@ -97,8 +97,9 @@ export class RapidAPITikTokAdapter extends MockProvider {
     try {
       return await fn();
     } catch (e) {
-      // Private accounts must surface, never mask with mock.
+      // Private accounts and handle-not-found must surface, never mask.
       if (e instanceof PrivateAccountError) throw e;
+      if (e instanceof HandleNotFoundError) throw e;
       console.warn(`[rapidapi-tiktok] ${label} failed, falling back to mock:`, e instanceof Error ? e.message : e);
       return fallback();
     }
@@ -116,6 +117,16 @@ export class RapidAPITikTokAdapter extends MockProvider {
         const s = j.data?.stats;
         if (!u || !s || s.followerCount === undefined) {
           throw new Error("response missing user/stats");
+        }
+        // Same wrong-account guard as the IG adapter — tikwm has been known
+        // to return unrelated profiles for handles it can't resolve.
+        const returnedUsername = (u.uniqueId ?? "").toLowerCase();
+        const requested = handle.toLowerCase();
+        if (returnedUsername && returnedUsername !== requested) {
+          console.warn(
+            `[rapidapi-tiktok] getProfile handle mismatch — requested "${requested}", got "${returnedUsername}". Refusing to avoid wrong-account data.`,
+          );
+          throw new HandleNotFoundError(handle, "tiktok");
         }
         if (u.privateAccount === true || u.secret === true) {
           throw new PrivateAccountError(handle, "tiktok");

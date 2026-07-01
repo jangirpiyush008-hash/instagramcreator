@@ -12,7 +12,7 @@
 import type { Platform } from "../types";
 import type { Profile, Post, UsernameAvailability, CommentItem } from "./adapter";
 import { MockProvider } from "./mock-provider";
-import { DataSourceError, PrivateAccountError } from "../utils/errors";
+import { DataSourceError, HandleNotFoundError, PrivateAccountError } from "../utils/errors";
 
 interface ProviderEnvelope {
   // RockSolid endpoints wrap payloads inconsistently:
@@ -29,6 +29,7 @@ interface ProviderEnvelope {
 }
 
 interface IgUserRaw {
+  username?: string;
   full_name?: string;
   biography?: string;
   is_verified?: boolean;
@@ -149,9 +150,11 @@ export class RapidAPIInstagramAdapter extends MockProvider {
     try {
       return await fn();
     } catch (e) {
-      // PrivateAccountError is intentional — never mask it with mock data,
-      // the API route catches it and shows the "private account" UI.
+      // PrivateAccountError and HandleNotFoundError are intentional — never
+      // mask them with mock data. The API route catches them and shows the
+      // corresponding UI ("private account" / "not found") to the user.
       if (e instanceof PrivateAccountError) throw e;
+      if (e instanceof HandleNotFoundError) throw e;
       console.warn(
         `[rapidapi-ig-stable] ${label} failed, falling back to mock:`,
         e instanceof Error ? e.message : e,
@@ -176,6 +179,20 @@ export class RapidAPIInstagramAdapter extends MockProvider {
           u.follower_count ?? u.edge_followed_by?.count ?? null;
         if (followers === null) {
           throw new DataSourceError("response missing follower count");
+        }
+        // Guard against wrong-account matches. RockSolid has been observed
+        // returning a completely different profile when the requested handle
+        // is a small / new account it can't resolve (e.g. `ashwarya_gg` →
+        // some 458k-follower unrelated account). If the response's username
+        // doesn't match what we asked for (case-insensitive), refuse — it
+        // would corrupt every downstream tool.
+        const returnedUsername = (u.username ?? "").toLowerCase();
+        const requested = handle.toLowerCase();
+        if (returnedUsername && returnedUsername !== requested) {
+          console.warn(
+            `[rapidapi-ig-stable] getProfile handle mismatch — requested "${requested}", got "${returnedUsername}". Refusing to avoid wrong-account data.`,
+          );
+          throw new HandleNotFoundError(handle, "instagram");
         }
         // Refuse private accounts immediately — bubble a PrivateAccountError
         // that the safe() wrapper deliberately re-throws (see below) so the
