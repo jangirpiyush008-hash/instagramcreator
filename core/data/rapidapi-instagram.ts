@@ -83,31 +83,41 @@ export class RapidAPIInstagramAdapter extends MockProvider {
   }
 
   private async post<T>(path: string, body: Record<string, string>): Promise<T> {
+    return this.request<T>("POST", path, body);
+  }
+
+  private async get<T>(path: string, query: Record<string, string>): Promise<T> {
+    return this.request<T>("GET", path, query);
+  }
+
+  private async request<T>(method: "GET" | "POST", path: string, params: Record<string, string>): Promise<T> {
     if (!this.apiKey || !this.host) {
       throw new DataSourceError("RapidAPI not configured (missing key or host)");
     }
-    const url = `https://${this.host}${path}`;
+    const isGet = method === "GET";
+    const qs = new URLSearchParams(params).toString();
+    const url = `https://${this.host}${path}${isGet && qs ? `?${qs}` : ""}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12_000);
     try {
       const res = await fetch(url, {
-        method: "POST",
+        method,
         headers: {
           "x-rapidapi-key": this.apiKey,
           "x-rapidapi-host": this.host,
-          "Content-Type": "application/x-www-form-urlencoded",
+          ...(isGet ? {} : { "Content-Type": "application/x-www-form-urlencoded" }),
           accept: "application/json",
         },
-        body: new URLSearchParams(body).toString(),
+        body: isGet ? undefined : qs,
         signal: controller.signal,
         cache: "no-store",
       });
       if (!res.ok) {
-        throw new DataSourceError(`${this.host} returned ${res.status}`);
+        throw new DataSourceError(`${this.host} ${method} ${path} returned ${res.status}`);
       }
       const json = (await res.json()) as ProviderEnvelope & Record<string, unknown>;
-      // Many RapidAPI scrapers return 200 with {"error": "..."} on transient
-      // upstream failures ("Please try again later" etc). Treat as a fail.
+      // Many scrapers return 200 with {"error": "..."} on transient upstream
+      // failures ("Please try again later"). Treat as a fail.
       if (json && typeof json === "object" && "error" in json && json.error) {
         throw new DataSourceError(`${this.host} provider message: ${String(json.error).slice(0, 80)}`);
       }
@@ -142,9 +152,12 @@ export class RapidAPIInstagramAdapter extends MockProvider {
     return this.safe<Profile>(
       "getProfile",
       async () => {
+        // "Account Data V2" endpoint on RockSolid — real endpoint path per
+        // their sidebar tooltip. Uses FB Graph internally so needs a public
+        // username; the API resolves it to an internal id itself.
         const r = await this.post<ProviderEnvelope>(
-          "/get_ig_user_info_v2.php",
-          { username_or_url: handle },
+          "/ig_get_fb_profile_v3.php",
+          { username: handle },
         );
         const u = (r.user ?? (r.data as { user?: IgUserRaw })?.user ?? r) as IgUserRaw;
         const followers =
@@ -177,9 +190,10 @@ export class RapidAPIInstagramAdapter extends MockProvider {
     return this.safe<Post[]>(
       "getRecentPosts",
       async () => {
+        // "User Posts" endpoint — no v2 suffix per the RockSolid docs.
         const r = await this.post<ProviderEnvelope>(
-          "/get_ig_user_posts_v2.php",
-          { username_or_url: handle },
+          "/get_ig_user_posts.php",
+          { username: handle },
         );
         // Possible response shapes: {items: [...]}, {data: {items: [...]}},
         // or GraphQL-style {data: {edge_owner_to_timeline_media: {edges: [...]}}}
@@ -267,10 +281,10 @@ export class RapidAPIInstagramAdapter extends MockProvider {
         const posts = await this.getRecentPosts(platform, handle, 1);
         const post = posts[0];
         if (!post) throw new DataSourceError("no recent post");
-        // RockSolid expects the public post URL (shortcode-based).
+        // "Get Post Comments" is a GET endpoint per the RockSolid sidebar.
         const postUrl = `https://www.instagram.com/p/${post.id}/`;
-        const r = await this.post<ProviderEnvelope>(
-          "/get_ig_post_comments_v2.php",
+        const r = await this.get<ProviderEnvelope>(
+          "/get_post_comments.php",
           { post_url: postUrl },
         );
         const raw =
