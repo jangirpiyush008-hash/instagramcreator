@@ -32,20 +32,34 @@ interface RawUserInfo {
 interface RawVideo {
   video_id?: string;
   aweme_id?: string;
+  id?: string;
   digg_count?: number;
+  like_count?: number;
   comment_count?: number;
   play_count?: number;
+  view_count?: number;
   share_count?: number;
   create_time?: number;          // unix seconds
+  createTime?: number;
   title?: string;
+  desc?: string;
   cover?: string;
+  origin_cover?: string;
   duration?: number;
 }
 
+// tikwm/tiktok-scraper7 has shipped a few different field names for the video
+// array over the years — `videos` (current docs), `list` (older), `aweme_list`
+// (from the underlying TikTok Android API), `itemList` (webapp-shape). Accept
+// them all so a schema drift on their side doesn't silently break us.
 interface RawVideoList {
   data?: {
     videos?: RawVideo[];
+    list?: RawVideo[];
+    aweme_list?: RawVideo[];
+    itemList?: RawVideo[];
   };
+  videos?: RawVideo[];
 }
 
 interface RawCommentsList {
@@ -121,17 +135,36 @@ export class RapidAPITikTokAdapter extends MockProvider {
           this.cfg,
           `/user/posts?unique_id=${encodeURIComponent(handle)}&count=${Math.min(Math.max(n, 1), 30)}`,
         );
-        const videos = j.data?.videos ?? [];
-        if (videos.length === 0) throw new Error("no videos returned");
+        const videos =
+          j.data?.videos ??
+          j.data?.list ??
+          j.data?.aweme_list ??
+          j.data?.itemList ??
+          j.videos ??
+          [];
+        if (videos.length === 0) {
+          // Log the actual response shape (keys only, no values) so we can see
+          // what tikwm renamed the field to without leaking anything sensitive.
+          const dataKeys = j.data ? Object.keys(j.data).join(",") : "<no data>";
+          const rootKeys = Object.keys(j).join(",");
+          console.warn(
+            `[rapidapi-tiktok] /user/posts returned empty. root keys=[${rootKeys}] data keys=[${dataKeys}]`,
+          );
+          throw new Error("no videos returned");
+        }
         return videos.slice(0, n).map<Post>((v) => ({
-          id: String(v.video_id ?? v.aweme_id ?? Math.random().toString(36).slice(2)),
-          likes: v.digg_count ?? 0,
+          id: String(v.video_id ?? v.aweme_id ?? v.id ?? Math.random().toString(36).slice(2)),
+          likes: v.digg_count ?? v.like_count ?? 0,
           comments: v.comment_count ?? 0,
-          views: v.play_count,
-          postedAt: v.create_time ? new Date(v.create_time * 1000).toISOString() : new Date().toISOString(),
-          thumbnailUrl: v.cover,
-          title: v.title?.slice(0, 80),
-          caption: v.title,
+          views: v.play_count ?? v.view_count,
+          postedAt: v.create_time
+            ? new Date(v.create_time * 1000).toISOString()
+            : v.createTime
+            ? new Date(v.createTime * 1000).toISOString()
+            : new Date().toISOString(),
+          thumbnailUrl: v.cover ?? v.origin_cover,
+          title: (v.title ?? v.desc)?.slice(0, 80),
+          caption: v.title ?? v.desc,
           durationSec: v.duration,
         }));
       },
