@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "DecodeCreator — Instagram, TikTok & YouTube Analytics",
+  "short_name": "DecodeCreator",
+  "version": "0.1.0",
+  "description": "Instant public engagement analytics for any Instagram, TikTok, or YouTube profile you're viewing. Public data only, the account is never notified.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Analyze this profile with DecodeCreator",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png"
+    }
+  },
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": [
+    "https://instagramcreator-production.up.railway.app/*",
+    "https://decodecreator.com/*",
+    "https://*.decodecreator.com/*"
+  ]
+}

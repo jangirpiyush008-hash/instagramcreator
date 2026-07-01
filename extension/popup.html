@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>DecodeCreator</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="dc-header">
+      <div class="dc-brand">
+        <div class="dc-logo"></div>
+        <span>DecodeCreator</span>
+      </div>
+    </header>
+
+    <main id="dc-content">
+      <!-- One of these states is shown at a time, swapped by popup.js -->
+
+      <!-- Loading state -->
+      <div class="dc-state" id="state-loading" hidden>
+        <div class="dc-spinner"></div>
+        <p class="dc-muted">Analyzing <span id="loading-handle">this profile</span>…</p>
+      </div>
+
+      <!-- Data state -->
+      <div class="dc-state" id="state-data" hidden>
+        <div class="dc-handle-row">
+          <div>
+            <div class="dc-handle" id="d-handle">@handle</div>
+            <div class="dc-muted dc-small" id="d-platform">Instagram</div>
+          </div>
+          <div class="dc-verified" id="d-verified" hidden>✓</div>
+        </div>
+
+        <div class="dc-hero">
+          <div class="dc-hero-label">Engagement rate</div>
+          <div class="dc-hero-value" id="d-er">—</div>
+          <div class="dc-hero-benchmark" id="d-benchmark">—</div>
+        </div>
+
+        <div class="dc-metrics">
+          <div class="dc-metric">
+            <div class="dc-metric-label">Followers</div>
+            <div class="dc-metric-value" id="d-followers">—</div>
+          </div>
+          <div class="dc-metric">
+            <div class="dc-metric-label">Posts analyzed</div>
+            <div class="dc-metric-value" id="d-posts">—</div>
+          </div>
+          <div class="dc-metric">
+            <div class="dc-metric-label">Avg likes</div>
+            <div class="dc-metric-value" id="d-likes">—</div>
+          </div>
+          <div class="dc-metric">
+            <div class="dc-metric-label">Avg comments</div>
+            <div class="dc-metric-value" id="d-comments">—</div>
+          </div>
+        </div>
+
+        <div class="dc-actions">
+          <a id="d-full" class="dc-btn dc-btn-primary" target="_blank">Full analysis →</a>
+        </div>
+      </div>
+
+      <!-- Empty state (not on a profile page) -->
+      <div class="dc-state" id="state-empty" hidden>
+        <p class="dc-muted">
+          Open an Instagram, TikTok, or YouTube profile page and click the icon again — or enter a handle:
+        </p>
+        <form id="manual-form" class="dc-manual">
+          <div class="dc-platform-pills">
+            <button type="button" data-platform="instagram" class="dc-pill dc-pill-active">Instagram</button>
+            <button type="button" data-platform="tiktok" class="dc-pill">TikTok</button>
+            <button type="button" data-platform="youtube" class="dc-pill">YouTube</button>
+          </div>
+          <div class="dc-input-row">
+            <span class="dc-input-prefix">@</span>
+            <input
+              id="manual-handle"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="handle"
+              required
+            />
+            <button type="submit" class="dc-btn dc-btn-primary">Go</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Error state -->
+      <div class="dc-state" id="state-error" hidden>
+        <div class="dc-error-title" id="err-title">Couldn't run this scan</div>
+        <div class="dc-muted dc-small" id="err-message">Please try again.</div>
+        <button id="err-retry" class="dc-btn dc-btn-secondary">Try again</button>
+      </div>
+    </main>
+
+    <footer class="dc-footer">
+      <a href="https://instagramcreator-production.up.railway.app" target="_blank">
+        Public data only — the account is never notified
+      </a>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
