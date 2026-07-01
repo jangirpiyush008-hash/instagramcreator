@@ -12,6 +12,7 @@ import { CommentPickerView } from "./views/CommentPickerView";
 import { UnfollowerTrackerView } from "./views/UnfollowerTrackerView";
 import { FakeFollowerView } from "./views/FakeFollowerView";
 import { GenderSplitView } from "./views/GenderSplitView";
+import { RecentPostsView } from "./views/RecentPostsView";
 import type { Platform } from "@/core/types";
 
 export type ToolParamValue = string | number | boolean;
@@ -44,6 +45,7 @@ export const VIEWS: Record<string, ToolView> = {
   "unfollower-tracker": UnfollowerTrackerView,
   "fake-follower": FakeFollowerView,
   "gender-split": GenderSplitView,
+  "recent-posts": RecentPostsView,
 };
 
 export function getView(toolId: string): ToolView | undefined {

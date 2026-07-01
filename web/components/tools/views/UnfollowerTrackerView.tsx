@@ -1,13 +1,7 @@
 "use client";
 
-import { Avatar, LockedMetric, MetricCard, SectionTitle, Sparkline } from "../primitives";
+import { MetricCard, SectionTitle, Sparkline } from "../primitives";
 import type { Platform } from "@/core/types";
-
-interface UnfollowerEntry {
-  username: string;
-  lostAt: string;
-  followers: number;
-}
 
 interface Props {
   platform: Platform;
@@ -16,62 +10,89 @@ interface Props {
   data?: Record<string, unknown>;
 }
 
-const FALLBACK_UNFOLLOWERS: UnfollowerEntry[] = [
-  { username: "akhil.dev", lostAt: "2 hours ago", followers: 12_400 },
-  { username: "neha.shops", lostAt: "Yesterday", followers: 980 },
-  { username: "saanvi_writes", lostAt: "2 days ago", followers: 4_320 },
-  { username: "the_rohit", lostAt: "3 days ago", followers: 28_900 },
-  { username: "ananya.codes", lostAt: "4 days ago", followers: 1_240 },
-];
+function formatCount(n: number): string {
+  return n.toLocaleString();
+}
 
-export function UnfollowerTrackerView({ handle, entitled, data }: Props) {
-  const followers = (data?.followers as number) ?? 184_320;
-  const net7d = (data?.net7d as number) ?? 412;
-  const gained = (data?.gained7d as number) ?? 1_124;
-  const lost = (data?.lost7d as number) ?? 712;
-  const since = (data?.trackedSince as string) ?? "Mar 4";
-  const history = (data?.followerHistory as number[] | undefined) ?? [
-    183_100, 183_240, 183_410, 183_580, 183_650, 183_720, 183_900, 184_030, 184_140, 184_220, 184_280, 184_320,
-  ];
-  const recent = (data?.recentUnfollowers as UnfollowerEntry[] | undefined) ?? FALLBACK_UNFOLLOWERS;
-  const ghost = (data?.ghostFollowers as number) ?? 2_184;
-  const mutualLost = (data?.mutualLost as number) ?? 42;
+function formatDelta(n: number): string {
+  return `${n >= 0 ? "+" : ""}${n.toLocaleString()}`;
+}
+
+export function UnfollowerTrackerView({ handle, platform, data }: Props) {
+  const followers = (data?.followers as number) ?? 0;
+  const gathering = (data?.gathering as boolean) ?? false;
+  const history = (data?.history as number[] | undefined) ?? [followers];
+  const net7d = (data?.net7d as number) ?? 0;
+  const lost7d = (data?.lost7d as number) ?? 0;
+  const gained7d = (data?.gained7d as number) ?? 0;
+  const net30d = (data?.net30d as number) ?? 0;
+  const lost30d = (data?.lost30d as number) ?? 0;
+  const gained30d = (data?.gained30d as number) ?? 0;
+  const churn7dPct = (data?.churn7dPct as number) ?? 0;
+  const snapshotCount = (data?.snapshotCount as number) ?? 1;
+  const firstSnapshotAt = data?.firstSnapshotAt as string | undefined;
+  const methodology = data?.methodology as string | undefined;
+  const note = data?.note as string | undefined;
+
+  const trendColor: "emerald" | "red" | "amber" =
+    net7d > 0 ? "emerald" : net7d < 0 ? "red" : "amber";
 
   return (
     <div className="space-y-6">
-      <SectionTitle hint={`@${handle} · last 7 days`}>Follower changes</SectionTitle>
+      <SectionTitle hint={`@${handle} · ${platform}`}>Follower churn</SectionTitle>
 
-      <div className="grid sm:grid-cols-3 gap-3">
-        <MetricCard label="Followers now" value={followers.toLocaleString()} accent="pink" />
-        <MetricCard label="Net 7-day change" value={`${net7d >= 0 ? "+" : ""}${net7d.toLocaleString()}`} sub={`gained ${gained.toLocaleString()} · lost ${lost.toLocaleString()}`} accent="emerald" />
-        <MetricCard label="Tracked since" value={since} sub="daily snapshots" accent="cyan" />
-      </div>
-
-      <section className="rounded-xl border border-border bg-card/60 p-5">
-        <SectionTitle>Follower count, 30 days</SectionTitle>
-        <Sparkline values={history} blurred={!entitled} height={120} />
-      </section>
-
-      <section>
-        <SectionTitle hint={entitled ? `${recent.length} total` : "unlock to reveal"}>Recent unfollowers</SectionTitle>
-        <div className="space-y-2">
-          {recent.map((u, i) => (
-            <div key={u.username + i} className="flex items-center gap-3 rounded-xl border border-border bg-card/60 px-4 py-3">
-              <Avatar name={u.username} size={36} hueSeed={i * 70} />
-              <div className="flex-1 min-w-0">
-                <div className={"text-sm font-medium " + (entitled ? "" : "blur-locked")}>@{u.username}</div>
-                <div className="text-xs text-muted-foreground">{u.lostAt} · {u.followers.toLocaleString()} followers</div>
-              </div>
-              <div className="text-xs text-muted-foreground">unfollowed</div>
-            </div>
-          ))}
+      {gathering ? (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-6 space-y-2">
+          <div className="text-xl font-semibold text-amber-200">First snapshot</div>
+          <p className="text-sm text-muted-foreground">
+            {note ?? "We captured this account's follower count for the first time."}
+          </p>
+          <div className="grid sm:grid-cols-2 gap-3 mt-4">
+            <MetricCard label="Followers now" value={formatCount(followers)} accent="pink" />
+            <MetricCard label="Snapshots stored" value={snapshotCount} sub="need at least 2 to compute churn" />
+          </div>
         </div>
-      </section>
+      ) : (
+        <>
+          <div className="grid sm:grid-cols-4 gap-3">
+            <MetricCard label="Followers now" value={formatCount(followers)} accent="pink" />
+            <MetricCard
+              label="Net 7-day"
+              value={formatDelta(net7d)}
+              sub={net7d >= 0 ? `+${formatCount(gained7d)} gained` : `${formatCount(lost7d)} lost`}
+              accent={trendColor}
+            />
+            <MetricCard
+              label="Net 30-day"
+              value={formatDelta(net30d)}
+              sub={net30d >= 0 ? `+${formatCount(gained30d)} gained` : `${formatCount(lost30d)} lost`}
+              accent={net30d > 0 ? "emerald" : net30d < 0 ? "red" : "amber"}
+            />
+            <MetricCard
+              label="Weekly churn"
+              value={`${churn7dPct.toFixed(2)}%`}
+              sub={lost7d > 0 ? `${formatCount(lost7d)} lost / current` : "no loss detected"}
+              accent={churn7dPct > 1 ? "red" : churn7dPct > 0 ? "amber" : "emerald"}
+            />
+          </div>
 
-      <div className="grid sm:grid-cols-2 gap-3">
-        <LockedMetric label="Ghost followers" value={ghost.toLocaleString()} sub="haven't engaged in 90d" entitled={entitled} accent="amber" />
-        <LockedMetric label="Mutual lost" value={mutualLost.toLocaleString()} sub="people you follow who unfollowed you" entitled={entitled} accent="red" />
-      </div>
+          <section className="rounded-xl border border-border bg-card/60 p-5">
+            <SectionTitle hint={firstSnapshotAt ? `since ${new Date(firstSnapshotAt).toLocaleDateString()}` : "recent history"}>
+              Follower count trend
+            </SectionTitle>
+            <Sparkline values={history} height={120} />
+            <p className="text-xs text-muted-foreground mt-2">
+              {snapshotCount.toLocaleString()} snapshot{snapshotCount === 1 ? "" : "s"} stored. Rising line = net growth, falling = net churn.
+            </p>
+          </section>
+        </>
+      )}
+
+      {methodology && (
+        <div className="rounded-xl border border-border bg-card/40 p-5 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">How this works:</span> {methodology}
+        </div>
+      )}
     </div>
   );
 }

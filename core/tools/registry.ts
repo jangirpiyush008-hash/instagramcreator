@@ -11,6 +11,7 @@ import { commentPicker } from "./comment-picker";
 import { unfollowerTracker } from "./unfollower-tracker";
 import { fakeFollower } from "./fake-follower";
 import { genderSplit } from "./gender-split";
+import { recentPosts } from "./recent-posts";
 
 // Add a tool: drop a file in core/tools/<id>/index.ts that implements SocialTool,
 // import it here, and append to TOOLS. The intent picker, scan API, paywall gating,
@@ -31,6 +32,7 @@ export const TOOLS: readonly SocialTool[] = [
   unfollowerTracker,
   fakeFollower,
   genderSplit,
+  recentPosts,
 ];
 
 export const toolsForPlatform = (p: Platform): SocialTool[] =>
