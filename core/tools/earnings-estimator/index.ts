@@ -17,6 +17,10 @@ export const earningsEstimator: SocialTool = {
     const profile = await data.getProfile(platform, handle);
     const posts = await data.getRecentPosts(platform, handle, 12);
     const est = await data.estimateEarnings(platform, profile, posts);
+    const samplePosts = posts
+      .slice()
+      .sort((a, b) => (b.views ?? b.likes) - (a.views ?? a.likes))
+      .slice(0, 3);
     return {
       toolId: "earnings-estimator",
       platform,
@@ -25,14 +29,14 @@ export const earningsEstimator: SocialTool = {
         followers: profile.followers,
         niche: est.niche,
         postingCadencePerMonth: est.postingCadencePerMonth,
-      },
-      locked: {
         perPostMin: est.perPostMin,
         perPostMax: est.perPostMax,
         perMonth: est.perMonth,
         perYear: est.perYear,
         currency: est.currency,
+        samplePosts,
       },
+      locked: {},
       generatedAt: new Date().toISOString(),
     };
   },

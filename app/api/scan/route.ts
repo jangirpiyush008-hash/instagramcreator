@@ -7,6 +7,7 @@ import { isEntitled } from "@/core/billing/entitlements";
 import { checkAndIncrementUsage } from "@/core/billing/rate-limit";
 import { blurLocked } from "@/core/tools/teaser";
 import { supabaseService } from "@/core/database/supabase";
+import { recordProfileSnapshot } from "@/core/data/snapshots";
 import { getCurrentUser } from "@/web/lib/supabase-server";
 import { normalizeHandle, scanKey } from "@/core/utils/handle";
 import { regionFromHeaders } from "@/core/utils/region";
@@ -67,6 +68,15 @@ export async function POST(req: Request) {
       // 3) run the tool through its adapter
       const data = adapterFor(platform);
       result = await tool.run({ platform, handle, data });
+
+      // 3a) write a follower snapshot so live-counter accumulates real history
+      // no matter which tool the visitor scanned. Best-effort.
+      const free = (result as { free?: { followers?: unknown; following?: unknown } }).free ?? {};
+      const followers = typeof free.followers === "number" ? free.followers : undefined;
+      const following = typeof free.following === "number" ? free.following : undefined;
+      if (followers !== undefined) {
+        await recordProfileSnapshot(supa, platform, handle, followers, following);
+      }
 
       // 4) cache for 48h (best-effort)
       await writeCachedToolResult(supa, platform, handle, toolId, result);

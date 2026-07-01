@@ -1,7 +1,24 @@
 "use client";
 
 import { Gauge, LockedMetric, MetricCard, SectionTitle, Sparkline } from "../primitives";
+import { MediaCard } from "../MediaCard";
 import type { Platform } from "@/core/types";
+
+interface RawPost {
+  id?: string;
+  title?: string;
+  caption?: string;
+  postedAt?: string;
+  durationSec?: number;
+  thumbnailUrl?: string;
+  thumbnailUrlHd?: string;
+  videoUrl?: string;
+  videoUrlHd?: string;
+  permalink?: string;
+  likes?: number;
+  comments?: number;
+  views?: number;
+}
 
 interface Props {
   platform: Platform;
@@ -35,6 +52,9 @@ export function EngagementRateView({ entitled, data, handle, platform }: Props) 
     benchmark: (src.benchmark as string) ?? SAMPLE.benchmark,
   };
   const trend = (src.trend as number[] | undefined) ?? SAMPLE.trend;
+  const topPosts = (src.topPosts as RawPost[] | undefined) ?? [];
+  const mcPlatform: "instagram" | "tiktok" = platform === "tiktok" ? "tiktok" : "instagram";
+  const safeHandle = handle.replace(/[^\w.\-]/g, "_");
 
   return (
     <div className="space-y-8">
@@ -69,6 +89,36 @@ export function EngagementRateView({ entitled, data, handle, platform }: Props) 
           <LockedMetric label="Benchmark" value={d.benchmark} sub={`${platform} creators`} entitled={entitled} accent="amber" />
         </div>
       </section>
+
+      {topPosts.length > 0 && (
+        <section>
+          <SectionTitle hint="highest likes + comments">Top posts driving this score</SectionTitle>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {topPosts.map((p, i) => (
+              <MediaCard
+                key={p.id ?? i}
+                platform={mcPlatform}
+                handle={safeHandle}
+                post={{
+                  id: p.id ?? `top-${i}`,
+                  caption: p.caption,
+                  title: p.title,
+                  postedAt: p.postedAt,
+                  durationSec: p.durationSec,
+                  thumbnailUrl: p.thumbnailUrl,
+                  thumbnailUrlHd: p.thumbnailUrlHd,
+                  videoUrl: p.videoUrl,
+                  videoUrlHd: p.videoUrlHd,
+                  permalink: p.permalink,
+                  likes: p.likes,
+                  comments: p.comments,
+                  views: p.views,
+                }}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       <p className="text-xs text-muted-foreground">
         @{handle} · {platform} · public-data analysis.

@@ -32,6 +32,12 @@ export const engagementRate: SocialTool = {
           ? ((p.likes + p.comments) / profile.followers) * 100
           : 0,
       );
+    // Top 3 posts by engagement, so the view can render playable/downloadable
+    // MediaCards for the posts that drove the score.
+    const topPosts = posts
+      .slice()
+      .sort((a, b) => b.likes + b.comments - (a.likes + a.comments))
+      .slice(0, 3);
     return {
       toolId: "engagement-rate",
       platform,
@@ -42,13 +48,13 @@ export const engagementRate: SocialTool = {
         verified: profile.verified,
         postsAnalyzed: posts.length,
         trend,
-      },
-      locked: {
         engagementRatePct: Number(er.toFixed(2)),
         avgLikes: Math.round(totals.likes / n),
         avgComments: Math.round(totals.comments / n),
         benchmark: er > 3 ? "above average" : er > 1 ? "average" : "below average",
+        topPosts,
       },
+      locked: {},
       generatedAt: new Date().toISOString(),
     };
   },

@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { LockedMetric, MetricCard, SectionTitle, Sparkline } from "../primitives";
+import { MetricCard, SectionTitle, Sparkline } from "../primitives";
 import type { Platform } from "@/core/types";
 
 interface Props {
@@ -11,70 +10,123 @@ interface Props {
   data?: Record<string, unknown>;
 }
 
-export function LiveCounterView({ handle, platform, entitled, data }: Props) {
-  const initialCount = (data?.current as number) ?? 184_320;
-  const initialHistory = (data?.history as number[] | undefined) ?? [
-    initialCount - 40, initialCount - 35, initialCount - 29, initialCount - 22,
-    initialCount - 18, initialCount - 12, initialCount - 8, initialCount - 4,
-    initialCount - 2, initialCount,
-  ];
-  const perHour = (data?.perHour as number) ?? 412;
-  const perDay = (data?.perDayProjection as number) ?? 9_880;
-  const millionEta = (data?.reachOneMillionDays as number | null) ?? 84;
+function formatCount(n: number): string {
+  return n.toLocaleString();
+}
 
-  const [count, setCount] = useState(initialCount);
-  const [delta, setDelta] = useState(0);
-  const [history, setHistory] = useState<number[]>(initialHistory);
+function formatSpan(hours: number): string {
+  if (hours < 1) return `${Math.round(hours * 60)} min`;
+  if (hours < 24) return `${hours.toFixed(1)} hr`;
+  const days = hours / 24;
+  return `${days.toFixed(1)} days`;
+}
 
-  useEffect(() => {
-    const id = setInterval(() => {
-      const bump = Math.random() < 0.65 ? 1 + Math.floor(Math.random() * 3) : 0;
-      if (bump === 0) return;
-      setCount((c) => {
-        const next = c + bump;
-        setDelta(bump);
-        setHistory((h) => [...h.slice(-19), next]);
-        return next;
-      });
-    }, 2200);
-    return () => clearInterval(id);
-  }, []);
+export function LiveCounterView({ handle, platform, data }: Props) {
+  const current = (data?.current as number) ?? 0;
+  const history = (data?.history as number[] | undefined) ?? [current];
+  const perHour = (data?.perHour as number) ?? 0;
+  const perDay = (data?.perDayProjection as number) ?? 0;
+  const sampleHours = (data?.sampleHours as number) ?? 0;
+  const firstSnapshotAt = data?.firstSnapshotAt as string | null | undefined;
+  const target = (data?.targetMilestone as number | undefined) ?? null;
+  const daysToTarget = (data?.daysToTarget as number | null | undefined) ?? null;
+  const deltaSince = (data?.deltaSinceOldest as number | undefined) ?? 0;
+  const note = data?.note as string | undefined;
+
+  const isFirst = sampleHours === 0 || !firstSnapshotAt;
+  const growing = deltaSince > 0;
+  const shrinking = deltaSince < 0;
 
   return (
     <div className="space-y-6">
-      <SectionTitle hint={`@${handle} · ${platform}`}>Live follower count</SectionTitle>
+      <SectionTitle hint={`@${handle} · ${platform}`}>Follower growth</SectionTitle>
 
       <div className="rounded-2xl border border-border surface p-8 text-center">
         <div className="text-xs uppercase tracking-wider text-muted-foreground">Right now</div>
         <div className="mt-3 text-6xl sm:text-7xl font-bold tabular-nums tracking-tight gradient-text-ig">
-          {count.toLocaleString()}
+          {formatCount(current)}
         </div>
-        <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-3 py-1 text-xs">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          {delta > 0 ? `+${delta} in the last tick` : "Watching…"}
-        </div>
-        <div className="mt-6 max-w-xl mx-auto">
-          <Sparkline values={history} height={60} />
-        </div>
+        {!isFirst && (
+          <div
+            className={
+              "mt-3 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs " +
+              (growing
+                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                : shrinking
+                  ? "bg-red-500/15 text-red-300 border-red-500/30"
+                  : "bg-muted text-muted-foreground border-border")
+            }
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+            {growing
+              ? `+${formatCount(deltaSince)} since ${formatSpan(sampleHours)} ago`
+              : shrinking
+                ? `${formatCount(deltaSince)} since ${formatSpan(sampleHours)} ago`
+                : `flat over ${formatSpan(sampleHours)}`}
+          </div>
+        )}
+        {history.length > 1 && (
+          <div className="mt-6 max-w-xl mx-auto">
+            <Sparkline values={history} height={60} />
+          </div>
+        )}
       </div>
 
-      <section>
-        <SectionTitle>Free</SectionTitle>
-        <div className="grid sm:grid-cols-3 gap-3">
-          <MetricCard label="Current count" value={count.toLocaleString()} accent="pink" />
-          <MetricCard label="Refresh" value="2 sec" sub="public data" accent="cyan" />
-          <MetricCard label="Session delta" value={`+${(count - initialCount).toLocaleString()}`} accent="emerald" />
+      {isFirst ? (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-5 text-sm">
+          <div className="font-medium text-amber-200">
+            {note ?? "First snapshot — no history yet."}
+          </div>
+          <p className="text-muted-foreground mt-1">
+            We captured this account's follower count for the first time. Come back after any future
+            scan (or scan a different tool for the same handle) to see per-hour growth.
+          </p>
         </div>
-      </section>
+      ) : (
+        <>
+          <section>
+            <SectionTitle>Growth signals</SectionTitle>
+            <div className="grid sm:grid-cols-3 gap-3">
+              <MetricCard
+                label="Per hour"
+                value={`${perHour >= 0 ? "+" : ""}${perHour.toFixed(1)}`}
+                sub={`over the last ${formatSpan(sampleHours)}`}
+                accent="pink"
+              />
+              <MetricCard
+                label="Per day"
+                value={`${perDay >= 0 ? "+" : ""}${formatCount(perDay)}`}
+                sub="projection at current rate"
+                accent="cyan"
+              />
+              <MetricCard
+                label="Change since first snap"
+                value={`${growing ? "+" : ""}${formatCount(deltaSince)}`}
+                sub={`captured ${firstSnapshotAt ? new Date(firstSnapshotAt).toLocaleString() : ""}`}
+                accent={growing ? "emerald" : shrinking ? "red" : "amber"}
+              />
+            </div>
+          </section>
 
-      <section>
-        <SectionTitle>Locked report</SectionTitle>
-        <div className="grid sm:grid-cols-3 gap-3">
-          <LockedMetric label="Per hour" value={`+${perHour.toLocaleString()}`} entitled={entitled} accent="pink" />
-          <LockedMetric label="Per day projection" value={`+${perDay.toLocaleString()}`} entitled={entitled} accent="cyan" />
-          <LockedMetric label="Reach 1M ETA" value={millionEta ? `${millionEta} days` : "—"} entitled={entitled} accent="amber" />
-        </div>
-      </section>
+          {target && daysToTarget !== null && daysToTarget > 0 && (
+            <div className="rounded-xl border border-border bg-card/60 p-5">
+              <div className="text-xs uppercase tracking-wider text-muted-foreground">Next milestone</div>
+              <div className="mt-2 text-2xl font-semibold">
+                {formatCount(target)} followers in ~{daysToTarget} days
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                At the current per-day growth rate. Actual pace varies with viral posts / drops.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+
+      <div className="rounded-xl border border-border bg-card/40 p-5 text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">How it works:</span> Every time anyone scans
+        this account for any tool, we record a follower snapshot. The growth rates above are computed
+        from real snapshots — not a client-side ticker.
+      </div>
     </div>
   );
 }

@@ -1,7 +1,24 @@
 "use client";
 
 import { LockedMetric, MetricCard, SectionTitle } from "../primitives";
+import { MediaCard } from "../MediaCard";
 import type { Platform } from "@/core/types";
+
+interface RawPost {
+  id?: string;
+  title?: string;
+  caption?: string;
+  postedAt?: string;
+  durationSec?: number;
+  thumbnailUrl?: string;
+  thumbnailUrlHd?: string;
+  videoUrl?: string;
+  videoUrlHd?: string;
+  permalink?: string;
+  likes?: number;
+  comments?: number;
+  views?: number;
+}
 
 interface Props {
   platform: Platform;
@@ -67,6 +84,42 @@ export function EarningsEstimatorView({ handle, platform, entitled, data }: Prop
           <LockedMetric label="Annual potential" value={`${sym}${d.perYear.toLocaleString()}`} entitled={entitled} accent="emerald" />
         </div>
       </section>
+
+      {(() => {
+        const samplePosts = (data?.samplePosts as RawPost[] | undefined) ?? [];
+        if (samplePosts.length === 0) return null;
+        const mcPlatform: "instagram" | "tiktok" = platform === "tiktok" ? "tiktok" : "instagram";
+        const safeHandle = handle.replace(/[^\w.\-]/g, "_");
+        return (
+          <section>
+            <SectionTitle hint="top-performing recent posts">Sample posts used in this estimate</SectionTitle>
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {samplePosts.map((p, i) => (
+                <MediaCard
+                  key={p.id ?? i}
+                  platform={mcPlatform}
+                  handle={safeHandle}
+                  post={{
+                    id: p.id ?? `sample-${i}`,
+                    caption: p.caption,
+                    title: p.title,
+                    postedAt: p.postedAt,
+                    durationSec: p.durationSec,
+                    thumbnailUrl: p.thumbnailUrl,
+                    thumbnailUrlHd: p.thumbnailUrlHd,
+                    videoUrl: p.videoUrl,
+                    videoUrlHd: p.videoUrlHd,
+                    permalink: p.permalink,
+                    likes: p.likes,
+                    comments: p.comments,
+                    views: p.views,
+                  }}
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })()}
     </div>
   );
 }

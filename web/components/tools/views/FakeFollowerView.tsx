@@ -1,11 +1,12 @@
 "use client";
 
-import { Avatar, Donut, LockedMetric, MetricCard, SectionTitle } from "../primitives";
+import { Donut, MetricCard, SectionTitle } from "../primitives";
 import type { Platform } from "@/core/types";
 
-interface FlaggedEntry {
-  username: string;
+interface Reason {
+  flag: string;
   note: string;
+  delta: number;
 }
 
 interface Props {
@@ -15,24 +16,21 @@ interface Props {
   data?: Record<string, unknown>;
 }
 
-const FALLBACK_FLAGGED: FlaggedEntry[] = [
-  { username: "user_847291", note: "0 posts · default avatar · 12 followers" },
-  { username: "marketinghack_pro", note: "Mass-follow pattern · spam comments" },
-  { username: "buy.likes.now", note: "Bio link to follower service" },
-  { username: "raj_8847_x", note: "Inactive 14 months" },
-];
-
 export function FakeFollowerView({ handle, entitled, data }: Props) {
   const followers = (data?.followers as number) ?? 184_320;
-  const sampleSize = (data?.sampleSize as number) ?? 3_000;
   const realPct = (data?.realPct as number) ?? 72;
   const inactivePct = (data?.inactivePct as number) ?? 17;
   const botPct = (data?.botPct as number) ?? 11;
-  const flagged = (data?.flagged as FlaggedEntry[] | undefined) ?? FALLBACK_FLAGGED;
+  const erPct = (data?.engagementRatePct as number) ?? 2.4;
+  const following = (data?.following as number) ?? 0;
+  const postsAnalyzed = (data?.postsAnalyzed as number) ?? 0;
+  const verified = (data?.verified as boolean) ?? false;
+  const reasons = (data?.reasons as Reason[] | undefined) ?? [];
+  const methodology = (data?.methodology as string | undefined);
 
   return (
     <div className="space-y-6">
-      <SectionTitle hint={`@${handle}`}>Audience quality</SectionTitle>
+      <SectionTitle hint={`@${handle} · ${postsAnalyzed} posts analyzed`}>Audience quality</SectionTitle>
 
       <div className="grid lg:grid-cols-[1fr_1.2fr] gap-4">
         <div className="rounded-xl border border-border bg-card/60 p-6 flex items-center justify-center">
@@ -48,32 +46,44 @@ export function FakeFollowerView({ handle, entitled, data }: Props) {
 
         <div className="grid sm:grid-cols-2 gap-3 content-start">
           <MetricCard label="Followers" value={followers.toLocaleString()} accent="pink" />
-          <MetricCard label="Sampled" value={sampleSize.toLocaleString()} sub="randomized sample" accent="cyan" />
-          <LockedMetric label="Likely real" value={`${realPct}%`} entitled={entitled} accent="emerald" />
-          <LockedMetric label="Bot / spam" value={`${botPct}%`} entitled={entitled} accent="red" />
+          <MetricCard label="Following" value={following.toLocaleString()} />
+          <MetricCard label="Engagement rate" value={`${erPct.toFixed(2)}%`} accent="cyan" />
+          <MetricCard label="Verified" value={verified ? "Yes" : "No"} accent={verified ? "emerald" : "amber"} />
         </div>
       </div>
 
       <section>
-        <SectionTitle>Most-suspicious flagged accounts</SectionTitle>
-        <div className="space-y-2">
-          {flagged.map((u, i) => (
-            <div key={u.username + i} className="flex items-center gap-3 rounded-xl border border-border bg-card/60 px-4 py-3">
-              <Avatar name={u.username} size={36} hueSeed={i * 90} />
-              <div className="flex-1 min-w-0">
-                <div className={"text-sm font-medium truncate " + (entitled ? "" : "blur-locked")}>@{u.username}</div>
-                <div className={"text-xs text-muted-foreground truncate " + (entitled ? "" : "blur-locked")}>{u.note}</div>
+        <SectionTitle>What we found</SectionTitle>
+        {reasons.length === 0 ? (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-4 text-sm">
+            <span className="text-emerald-300 font-medium">Looks healthy.</span>{" "}
+            <span className="text-muted-foreground">
+              Engagement rate, follow ratio, and verification status all in the normal range for an
+              organic account of this size.
+            </span>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {reasons.map((r, i) => (
+              <div key={i} className="rounded-xl border border-border bg-card/60 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs uppercase tracking-wider text-red-300 font-medium">
+                    –{Math.abs(r.delta)}
+                  </span>
+                  <div className="text-sm font-medium">{r.flag}</div>
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">{r.note}</div>
               </div>
-              <div className="text-xs text-red-300">flagged</div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </section>
 
-      <div className="rounded-xl border border-border bg-card/40 p-5 text-sm text-muted-foreground">
-        Estimate based on a randomized sample of {sampleSize.toLocaleString()} followers. Larger samples
-        available on the subscriber plan.
-      </div>
+      {methodology && (
+        <div className="rounded-xl border border-border bg-card/40 p-5 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">Methodology:</span> {methodology}
+        </div>
+      )}
     </div>
   );
 }
