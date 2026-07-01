@@ -1,6 +1,6 @@
 "use client";
 
-import { LockedMetric, MetricCard, SectionTitle } from "../primitives";
+import { MetricCard, SectionTitle } from "../primitives";
 import type { Platform } from "@/core/types";
 
 interface Props {
@@ -10,89 +10,150 @@ interface Props {
   data?: Record<string, unknown>;
 }
 
-const FALLBACK = {
-  malePct: 38,
-  femalePct: 58,
-  otherPct: 4,
-  topAgeRange: "25–34",
-  topCountry: "India",
-  topCity: "Mumbai",
-  sampleSize: 3000,
-  method: "Public signals",
-  confidence: "High",
+interface ClassifiedName {
+  name: string;
+  gender: "male" | "female" | null;
+  probability: number;
+}
+
+const SOURCE_LABEL: Record<string, string> = {
+  followers: "Sampled from public follower list",
+  commenters: "Sampled from recent commenters (followers not available for this account)",
+  none: "No sample obtained",
 };
 
-export function GenderSplitView({ handle, entitled, data }: Props) {
-  const d = {
-    malePct: (data?.malePct as number) ?? FALLBACK.malePct,
-    femalePct: (data?.femalePct as number) ?? FALLBACK.femalePct,
-    otherPct: (data?.otherPct as number) ?? FALLBACK.otherPct,
-    topAgeRange: (data?.topAgeRange as string) ?? FALLBACK.topAgeRange,
-    topCountry: (data?.topCountry as string) ?? FALLBACK.topCountry,
-    topCity: (data?.topCity as string) ?? FALLBACK.topCity,
-    sampleSize: (data?.sampleSize as number) ?? FALLBACK.sampleSize,
-    method: (data?.method as string) ?? FALLBACK.method,
-    confidence: (data?.confidence as string) ?? FALLBACK.confidence,
-  };
+export function GenderSplitView({ handle, data }: Props) {
+  const insufficientData = (data?.insufficientData as boolean) ?? false;
+  const reason = data?.reason as string | undefined;
+  const malePct = data?.malePct as number | null;
+  const femalePct = data?.femalePct as number | null;
+  const unknownPct = (data?.unknownPct as number) ?? 0;
+  const sampleSize = (data?.sampleSize as number) ?? 0;
+  const classifiableCount = (data?.classifiableCount as number) ?? 0;
+  const confidentClassifications = (data?.confidentClassifications as number) ?? 0;
+  const source = (data?.source as string) ?? "none";
+  const confidence = (data?.confidence as string) ?? "Low";
+  const methodology = data?.methodology as string | undefined;
+  const topNames = (data?.topClassifiedNames as ClassifiedName[] | undefined) ?? [];
+
+  if (insufficientData) {
+    return (
+      <div className="space-y-6">
+        <SectionTitle hint={`@${handle}`}>Audience gender split</SectionTitle>
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-6 space-y-3">
+          <div className="text-xl font-semibold text-amber-200">Insufficient data</div>
+          <p className="text-sm text-muted-foreground">{reason}</p>
+          {sampleSize > 0 && (
+            <div className="grid sm:grid-cols-2 gap-3 mt-2">
+              <MetricCard label="Sample size" value={sampleSize.toLocaleString()} />
+              <MetricCard label="Classifiable names" value={classifiableCount.toLocaleString()} />
+            </div>
+          )}
+        </div>
+        {methodology && (
+          <div className="rounded-xl border border-border bg-card/40 p-5 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">Methodology:</span> {methodology}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const femaleWidth = Math.max(femalePct ?? 0, 0);
+  const maleWidth = Math.max(malePct ?? 0, 0);
 
   return (
     <div className="space-y-6">
-      <SectionTitle hint={`@${handle} · sampled audience`}>Audience demographics</SectionTitle>
+      <SectionTitle hint={`@${handle} · ${sampleSize.toLocaleString()} sampled`}>Audience gender split</SectionTitle>
 
       <div className="rounded-xl border border-border bg-card/60 p-6 space-y-6">
         <div className="flex w-full h-6 rounded-full overflow-hidden border border-border/60">
-          <div className="bg-[hsl(322_95%_60%)] flex items-center justify-end pr-2 text-[10px] font-medium text-white" style={{ width: `${d.femalePct}%` }} title={`Female ${d.femalePct}%`}>
-            <span className={entitled ? "" : "blur-locked"}>F</span>
-          </div>
-          <div className="bg-[hsl(220_90%_60%)] flex items-center justify-end pr-2 text-[10px] font-medium text-white" style={{ width: `${d.malePct}%` }} title={`Male ${d.malePct}%`}>
-            <span className={entitled ? "" : "blur-locked"}>M</span>
-          </div>
-          <div className="bg-[hsl(45_95%_55%)] flex items-center justify-end pr-2 text-[10px] font-medium text-black" style={{ width: `${d.otherPct}%` }} title={`Other ${d.otherPct}%`}>
-            <span className={entitled ? "" : "blur-locked"}>·</span>
-          </div>
+          {femaleWidth > 0 && (
+            <div
+              className="bg-[hsl(322_95%_60%)] flex items-center justify-end pr-2 text-[10px] font-medium text-white"
+              style={{ width: `${femaleWidth}%` }}
+              title={`Female ${femaleWidth}%`}
+            >
+              F
+            </div>
+          )}
+          {maleWidth > 0 && (
+            <div
+              className="bg-[hsl(220_90%_60%)] flex items-center justify-end pr-2 text-[10px] font-medium text-white"
+              style={{ width: `${maleWidth}%` }}
+              title={`Male ${maleWidth}%`}
+            >
+              M
+            </div>
+          )}
         </div>
 
-        <div className="grid sm:grid-cols-3 gap-3">
-          <SplitCard label="Female" value={d.femalePct} colorClass="bg-[hsl(322_95%_60%)]" entitled={entitled} />
-          <SplitCard label="Male" value={d.malePct} colorClass="bg-[hsl(220_90%_60%)]" entitled={entitled} />
-          <SplitCard label="Other" value={d.otherPct} colorClass="bg-[hsl(45_95%_55%)]" entitled={entitled} />
+        <div className="grid sm:grid-cols-2 gap-3">
+          <SplitCard label="Female" value={femalePct ?? 0} colorClass="bg-[hsl(322_95%_60%)]" />
+          <SplitCard label="Male" value={malePct ?? 0} colorClass="bg-[hsl(220_90%_60%)]" />
         </div>
       </div>
 
       <section>
-        <SectionTitle>Free</SectionTitle>
-        <div className="grid sm:grid-cols-3 gap-3">
-          <MetricCard label="Sample size" value={d.sampleSize.toLocaleString()} sub="randomized followers" accent="cyan" />
-          <MetricCard label="Method" value={d.method} sub="profile name + photo cues" />
-          <MetricCard label="Confidence" value={d.confidence} sub="3,000 ≫ 90% CI" accent="emerald" />
+        <SectionTitle>Sample details</SectionTitle>
+        <div className="grid sm:grid-cols-4 gap-3">
+          <MetricCard label="Sampled" value={sampleSize.toLocaleString()} sub={SOURCE_LABEL[source] ?? source} accent="cyan" />
+          <MetricCard label="Classifiable" value={classifiableCount.toLocaleString()} sub="names we could parse" />
+          <MetricCard label="Confident" value={confidentClassifications.toLocaleString()} sub="≥65% probability" accent="emerald" />
+          <MetricCard label="Confidence" value={confidence} sub="High >60 · Med 30-60 · Low <30" accent={confidence === "High" ? "emerald" : confidence === "Medium" ? "amber" : "red"} />
         </div>
       </section>
 
-      <section>
-        <SectionTitle>Locked report</SectionTitle>
-        <div className="grid sm:grid-cols-3 gap-3">
-          <LockedMetric label="Top age range" value={d.topAgeRange} entitled={entitled} accent="pink" />
-          <LockedMetric label="Top country" value={d.topCountry} entitled={entitled} accent="cyan" />
-          <LockedMetric label="Top city" value={d.topCity} entitled={entitled} accent="amber" />
-        </div>
-      </section>
+      {topNames.length > 0 && (
+        <section>
+          <SectionTitle>Highest-confidence classifications</SectionTitle>
+          <div className="flex flex-wrap gap-2">
+            {topNames.map((n) => (
+              <div
+                key={n.name}
+                className={
+                  "rounded-full px-3 py-1.5 text-sm border " +
+                  (n.gender === "female"
+                    ? "border-[hsl(322_95%_60%)]/50 bg-[hsl(322_95%_60%)]/10 text-[hsl(322_95%_80%)]"
+                    : "border-[hsl(220_90%_60%)]/50 bg-[hsl(220_90%_60%)]/10 text-[hsl(220_90%_80%)]")
+                }
+              >
+                <span className="font-medium capitalize">{n.name}</span>
+                <span className="text-xs opacity-80 ml-1.5">
+                  {n.gender} · {Math.round(n.probability * 100)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
-      <div className="rounded-xl border border-border bg-card/40 p-5 text-sm text-muted-foreground">
-        Estimates inferred from public follower signals (display name, profile photo cues). Not a hard identification — directional only.
-      </div>
+      {unknownPct > 0 && (
+        <div className="rounded-xl border border-border bg-card/40 p-4 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">{unknownPct.toFixed(1)}% unclassified</span> —
+          names we couldn&apos;t confidently gender-tag (non-Western names classify less accurately,
+          or the name is genuinely ambiguous). These are excluded from the M/F percentages above.
+        </div>
+      )}
+
+      {methodology && (
+        <div className="rounded-xl border border-border bg-card/40 p-5 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">How this works:</span> {methodology}
+        </div>
+      )}
     </div>
   );
 }
 
-function SplitCard({ label, value, colorClass, entitled }: { label: string; value: number; colorClass: string; entitled: boolean }) {
+function SplitCard({ label, value, colorClass }: { label: string; value: number; colorClass: string }) {
   return (
     <div className="rounded-xl border border-border bg-card/60 p-5">
       <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
         <span className={`h-2 w-2 rounded-full ${colorClass}`} />
         {label}
       </div>
-      <div className={"text-4xl font-semibold mt-2 tabular-nums " + (entitled ? "" : "blur-locked")}>
-        {entitled ? `${value}%` : "••%"}
+      <div className="text-4xl font-semibold mt-2 tabular-nums">
+        {value.toFixed(1)}%
       </div>
     </div>
   );

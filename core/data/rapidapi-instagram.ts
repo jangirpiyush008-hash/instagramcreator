@@ -10,7 +10,7 @@
 // returns the plain MockProvider.
 
 import type { Platform } from "../types";
-import type { Profile, Post, UsernameAvailability, CommentItem } from "./adapter";
+import type { Profile, Post, UsernameAvailability, CommentItem, FollowerLite } from "./adapter";
 import { MockProvider } from "./mock-provider";
 import { DataSourceError, HandleNotFoundError, PrivateAccountError, ProviderRateLimitError } from "../utils/errors";
 
@@ -19,6 +19,7 @@ interface ProviderEnvelope {
   //   /ig_get_fb_profile_v3.php  → { user: {...} } or the user fields at root
   //   /get_ig_user_posts.php     → { posts: [{ node: {...} }], pagination_token }
   //   /get_post_comments.php     → { comments: [...] } or { items: [...] }
+  //   /get_ig_user_followers.php → { users: [{...}] } or { followers: [...] }
   error?: string;
   user?: unknown;
   data?: unknown;
@@ -26,6 +27,15 @@ interface ProviderEnvelope {
   posts?: { node?: unknown }[];
   comments?: unknown;
   comment_count?: number;
+  users?: unknown;
+  followers?: unknown;
+}
+
+interface IgFollowerRaw {
+  username?: string;
+  full_name?: string;
+  pk?: string;
+  id?: string;
 }
 
 interface IgUserRaw {
@@ -341,6 +351,42 @@ export class RapidAPIInstagramAdapter extends MockProvider {
         return { post, resolutions };
       },
       () => super.getThumbnail(platform, handle),
+    );
+  }
+
+  override async getFollowerSample(platform: Platform, handle: string, n: number): Promise<FollowerLite[]> {
+    return this.safe<FollowerLite[]>(
+      "getFollowerSample",
+      async () => {
+        // RockSolid exposes `/get_ig_user_followers.php` — same POST +
+        // form-urlencoded convention as the other endpoints. If the exact
+        // path is different on their end, the log at request-time will show
+        // the 404 and we can patch in one line.
+        const r = await this.post<ProviderEnvelope>(
+          "/get_ig_user_followers.php",
+          { username_or_url: handle },
+        );
+        const raw: IgFollowerRaw[] =
+          (r.users as IgFollowerRaw[] | undefined) ??
+          (r.followers as IgFollowerRaw[] | undefined) ??
+          (r.items as IgFollowerRaw[] | undefined) ??
+          ((r.data as { users?: IgFollowerRaw[]; followers?: IgFollowerRaw[] } | undefined)?.users) ??
+          ((r.data as { users?: IgFollowerRaw[]; followers?: IgFollowerRaw[] } | undefined)?.followers) ??
+          [];
+        if (raw.length === 0) {
+          const dataKeys = r.data ? Object.keys(r.data as object).join(",") : "<no data>";
+          const rootKeys = Object.keys(r).join(",");
+          console.warn(
+            `[rapidapi-ig-stable] /get_ig_user_followers.php returned empty. root keys=[${rootKeys}] data keys=[${dataKeys}]`,
+          );
+          throw new DataSourceError("no followers in response");
+        }
+        return raw.slice(0, n).map<FollowerLite>((u) => ({
+          username: u.username ?? "",
+          fullName: u.full_name,
+        }));
+      },
+      () => super.getFollowerSample(platform, handle, n),
     );
   }
 

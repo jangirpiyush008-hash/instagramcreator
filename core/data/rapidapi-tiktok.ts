@@ -2,7 +2,7 @@
 // Same fallback pattern as RapidAPIInstagramAdapter.
 
 import type { Platform } from "../types";
-import type { Profile, Post, UsernameAvailability, CommentItem } from "./adapter";
+import type { Profile, Post, UsernameAvailability, CommentItem, FollowerLite } from "./adapter";
 import { MockProvider } from "./mock-provider";
 import { rapidApiFetch, type RapidAPIConfig } from "./rapidapi-base";
 import { HandleNotFoundError, PrivateAccountError, ProviderRateLimitError } from "../utils/errors";
@@ -224,6 +224,38 @@ export class RapidAPITikTokAdapter extends MockProvider {
         }
       },
       () => super.isHandleAvailable(platform, handle),
+    );
+  }
+
+  override async getFollowerSample(platform: Platform, handle: string, n: number): Promise<FollowerLite[]> {
+    return this.safe<FollowerLite[]>(
+      "getFollowerSample",
+      async () => {
+        // tikwm sidebar names this "Get User's Followers" at /user/followers.
+        interface RawFollowerList {
+          data?: {
+            followers?: { user?: { unique_id?: string; uniqueId?: string; nickname?: string } }[];
+            list?: { user?: { unique_id?: string; uniqueId?: string; nickname?: string } }[];
+          };
+        }
+        const j = await rapidApiFetch<RawFollowerList>(
+          this.cfg,
+          `/user/followers?unique_id=${encodeURIComponent(handle)}&count=${Math.min(Math.max(n, 1), 200)}`,
+        );
+        const raw = j.data?.followers ?? j.data?.list ?? [];
+        if (raw.length === 0) {
+          const dataKeys = j.data ? Object.keys(j.data).join(",") : "<no data>";
+          console.warn(
+            `[rapidapi-tiktok] /user/followers returned empty. data keys=[${dataKeys}]`,
+          );
+          throw new Error("no followers in response");
+        }
+        return raw.slice(0, n).map<FollowerLite>((entry) => ({
+          username: entry.user?.uniqueId ?? entry.user?.unique_id ?? "",
+          fullName: entry.user?.nickname,
+        }));
+      },
+      () => super.getFollowerSample(platform, handle, n),
     );
   }
 

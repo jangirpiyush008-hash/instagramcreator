@@ -122,10 +122,20 @@ export interface UnfollowerDelta {
   mutualLost: number;
 }
 
+// A lightweight follower record — just the fields we need for name-based
+// gender inference. Providers return more, but we only surface what we use.
+export interface FollowerLite {
+  username: string;
+  fullName?: string;
+}
+
 export interface DataAdapter {
   // Phase 0 baseline
   getProfile(platform: Platform, handle: string): Promise<Profile>;
   getRecentPosts(platform: Platform, handle: string, n: number): Promise<Post[]>;
+  // Return up to N followers (single page is fine). Providers page at 50-100
+  // per call, so `n` is a target, not a hard promise.
+  getFollowerSample(platform: Platform, handle: string, n: number): Promise<FollowerLite[]>;
 
   // Phase 1
   isHandleAvailable(platform: Platform, handle: string): Promise<UsernameAvailability>;

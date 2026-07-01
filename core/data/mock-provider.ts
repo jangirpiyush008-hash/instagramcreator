@@ -255,6 +255,14 @@ export class MockProvider implements DataAdapter {
     };
   }
 
+  async getFollowerSample(_platform: Platform, _handle: string, _n: number): Promise<import("./adapter").FollowerLite[]> {
+    // MockProvider intentionally returns nothing here — the gender-split tool
+    // needs REAL follower usernames to do meaningful name-based classification.
+    // Feeding it seeded mock data would just fake a random gender split, which
+    // was the exact bug we already fixed for the other estimate tools.
+    return [];
+  }
+
   async getFollowerAudit(platform: Platform, handle: string, sample: number): Promise<FollowerAudit> {
     const { rng } = makeSeeds(handle, platform);
     const botPct = 4 + Math.floor(rng() * 18);
