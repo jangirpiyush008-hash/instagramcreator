@@ -11,6 +11,8 @@ export interface ToolResult {
   generatedAt: string; // ISO
 }
 
+export type ToolParams = Record<string, string | number | boolean>;
+
 export interface SocialTool {
   id: string;                 // "engagement-rate"
   name: string;               // "Engagement Rate"
@@ -20,5 +22,10 @@ export interface SocialTool {
   phase: 0 | 1 | 2 | 3;       // 0 = shipped; 1/2/3 = roadmap (intent picker shows badge)
   seo: { slug: string; title: string; description: string };
   // pure logic — reads ONLY from the DataAdapter. No network calls of its own.
-  run(args: { platform: Platform; handle: string; data: DataAdapter }): Promise<ToolResult>;
+  run(args: {
+    platform: Platform;
+    handle: string;
+    data: DataAdapter;
+    params?: ToolParams;
+  }): Promise<ToolResult>;
 }

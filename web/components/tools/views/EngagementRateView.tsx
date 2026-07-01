@@ -20,12 +20,18 @@ interface RawPost {
   views?: number;
 }
 
+type ToolParams = Record<string, string | number | boolean>;
+
 interface Props {
   platform: Platform;
   handle: string;
   entitled: boolean;
   data?: Record<string, unknown>;
+  params?: ToolParams;
+  onParamsChange?: (next: ToolParams) => void;
 }
+
+const POST_COUNT_OPTIONS = [6, 12, 24, 50];
 
 const SAMPLE = {
   displayName: "Sample Creator",
@@ -39,7 +45,11 @@ const SAMPLE = {
   trend: [3.1, 3.3, 2.9, 3.6, 3.8, 3.5, 4.1, 3.9, 4.3, 4.2, 4.6, 4.21],
 };
 
-export function EngagementRateView({ entitled, data, handle, platform }: Props) {
+export function EngagementRateView({ entitled, data, handle, platform, params, onParamsChange }: Props) {
+  const activeCount =
+    typeof params?.postCount === "number"
+      ? params.postCount
+      : (data?.postsAnalyzed as number | undefined) ?? 12;
   const src = data ?? {};
   const d = {
     displayName: (src.displayName as string) ?? SAMPLE.displayName,
@@ -58,6 +68,32 @@ export function EngagementRateView({ entitled, data, handle, platform }: Props) 
 
   return (
     <div className="space-y-8">
+      {onParamsChange && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs uppercase tracking-wider text-muted-foreground mr-1">
+            Analyze
+          </span>
+          {POST_COUNT_OPTIONS.map((n) => {
+            const isActive = n === activeCount;
+            return (
+              <button
+                key={n}
+                type="button"
+                onClick={() => onParamsChange({ ...params, postCount: n })}
+                className={
+                  "rounded-full px-4 py-1.5 text-sm font-medium transition-all " +
+                  (isActive
+                    ? "bg-gradient-ig text-white shadow-md"
+                    : "border border-border bg-card/60 text-muted-foreground hover:border-primary/50 hover:text-foreground")
+                }
+              >
+                {n} posts
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="grid lg:grid-cols-[1fr_1.2fr] gap-4 items-stretch">
         <div className="rounded-xl border border-border bg-card/60 p-6">
           <SectionTitle hint={`${d.postsAnalyzed} posts`}>Engagement rate</SectionTitle>

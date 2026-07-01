@@ -14,9 +14,15 @@ export const engagementRate: SocialTool = {
     description:
       "Check any public account's real engagement rate in seconds. Public data only — the account is never notified.",
   },
-  async run({ platform, handle, data }) {
+  async run({ platform, handle, data, params }) {
+    // Allow the caller to pick how many recent posts to average over. Default
+    // 12 matches most creator benchmarks; capped at 50 to bound API cost.
+    const requested = Number(params?.postCount);
+    const postCount = Number.isFinite(requested) && requested > 0
+      ? Math.min(Math.max(Math.round(requested), 3), 50)
+      : 12;
     const profile = await data.getProfile(platform, handle);
-    const posts = await data.getRecentPosts(platform, handle, 12);
+    const posts = await data.getRecentPosts(platform, handle, postCount);
     const totals = posts.reduce(
       (a, p) => ({ likes: a.likes + p.likes, comments: a.comments + p.comments }),
       { likes: 0, comments: 0 },

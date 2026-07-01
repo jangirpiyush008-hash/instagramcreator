@@ -13,6 +13,9 @@ export const ScanRequestSchema = z.object({
   platform: PlatformSchema,
   handle: HandleSchema,
   toolId: z.string().min(1).max(64),
+  // Optional per-tool params (e.g. engagement-rate's postCount selector).
+  // Kept loose — each tool validates whatever it cares about internally.
+  params: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
 });
 
 export const PlanSchema = z.enum(["monthly", "annual", "one_time"]);

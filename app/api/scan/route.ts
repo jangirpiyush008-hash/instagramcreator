@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const { platform, toolId } = parsed.data;
+  const { platform, toolId, params } = parsed.data;
   const handle = normalizeHandle(parsed.data.handle);
   const tool = getTool(toolId);
   if (!tool || !tool.platforms.includes(platform)) {
@@ -51,10 +51,14 @@ export async function POST(req: Request) {
   const supa = supabaseService();
   const region = regionFromHeaders(req.headers);
   const key = scanKey(platform, handle, toolId);
+  // Skip cache when the caller passes custom params (e.g. engagement-rate
+  // with a non-default post count). Otherwise a 24-post scan would collide
+  // with the cached 12-post one under the same cache key.
+  const hasParams = params && Object.keys(params).length > 0;
 
   try {
     // 1) cache lookup — cached hits do NOT count against rate limit
-    let result = await getCachedToolResult(supa, platform, handle, toolId);
+    let result = hasParams ? null : await getCachedToolResult(supa, platform, handle, toolId);
 
     if (!result) {
       // 2) rate-limit BEFORE we burn data-API budget
@@ -67,7 +71,7 @@ export async function POST(req: Request) {
 
       // 3) run the tool through its adapter
       const data = adapterFor(platform);
-      result = await tool.run({ platform, handle, data });
+      result = await tool.run({ platform, handle, data, params });
 
       // 3a) write a follower snapshot so live-counter accumulates real history
       // no matter which tool the visitor scanned. Best-effort.
@@ -78,8 +82,12 @@ export async function POST(req: Request) {
         await recordProfileSnapshot(supa, platform, handle, followers, following);
       }
 
-      // 4) cache for 48h (best-effort)
-      await writeCachedToolResult(supa, platform, handle, toolId, result);
+      // 4) cache for 48h (best-effort) — only cache default-params runs, so
+      // subsequent default fetches are fast but custom-count runs always
+      // read fresh data.
+      if (!hasParams) {
+        await writeCachedToolResult(supa, platform, handle, toolId, result);
+      }
     }
 
     // 5) entitlement gate — return blurred locked values for non-entitled users

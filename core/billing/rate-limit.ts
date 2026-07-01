@@ -10,7 +10,20 @@ interface CheckArgs {
 }
 
 // Bumps usage_daily ONLY on a real scan (cache miss). Throws RateLimitError if over.
+//
+// DEV: rate limit is disabled while we build/test the full product. Flip
+// DEV_DISABLE_RATE_LIMIT back to false (or delete the block) before wiring
+// live payments. Paired with the entitled=true bypass in the scan API route.
+const DEV_DISABLE_RATE_LIMIT = true;
+
+// Referenced only to silence unused-import warnings while the DEV bypass is on.
+void PLAN_LIMITS;
+void RateLimitError;
+void hasActiveSubscription;
+
 export async function checkAndIncrementUsage(args: CheckArgs): Promise<void> {
+  if (DEV_DISABLE_RATE_LIMIT) return;
+
   const { supabaseService, userId, anonKey } = args;
   const day = new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC
 

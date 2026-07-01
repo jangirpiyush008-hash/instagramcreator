@@ -14,11 +14,19 @@ import { FakeFollowerView } from "./views/FakeFollowerView";
 import { GenderSplitView } from "./views/GenderSplitView";
 import type { Platform } from "@/core/types";
 
+export type ToolParamValue = string | number | boolean;
+export type ToolParams = Record<string, ToolParamValue>;
+
 export type ToolViewProps = {
   platform: Platform;
   handle: string;
   entitled: boolean;
   data?: Record<string, unknown>;
+  // Interactive tools (e.g. engagement-rate's post-count selector) read the
+  // active params here and call onParamsChange to trigger a re-fetch. Views
+  // that don't need them can safely ignore both.
+  params?: ToolParams;
+  onParamsChange?: (next: ToolParams) => void;
 };
 
 export type ToolView = (props: ToolViewProps) => ReactElement;

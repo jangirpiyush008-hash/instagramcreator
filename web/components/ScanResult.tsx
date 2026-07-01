@@ -81,14 +81,20 @@ function LiveScan({
     | { kind: "data"; payload: ScanResponse }
     | { kind: "error"; message: string; code?: string }
   >({ kind: "loading" });
+  // Optional per-tool params (e.g. engagement-rate post count). Views can
+  // update these via the `onParamsChange` prop to trigger a re-fetch.
+  const [params, setParams] = useState<Record<string, string | number | boolean>>({});
+  const paramsKey = JSON.stringify(params);
 
   useEffect(() => {
     let cancelled = false;
     setState({ kind: "loading" });
+    const body: Record<string, unknown> = { platform, handle, toolId: tool.id };
+    if (Object.keys(params).length > 0) body.params = params;
     fetch("/api/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ platform, handle, toolId: tool.id }),
+      body: JSON.stringify(body),
     })
       .then(async (res) => {
         const j = (await res.json()) as ScanResponse | ScanError;
@@ -110,7 +116,8 @@ function LiveScan({
     return () => {
       cancelled = true;
     };
-  }, [platform, handle, tool.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [platform, handle, tool.id, paramsKey]);
 
   if (state.kind === "loading") {
     return (
@@ -174,6 +181,8 @@ function LiveScan({
           platform={platform}
           handle={handle}
           entitled={payload.entitled}
+          params={params}
+          onParamsChange={setParams}
           data={{ ...payload.result.free, ...payload.result.locked }}
         />
       ) : (
