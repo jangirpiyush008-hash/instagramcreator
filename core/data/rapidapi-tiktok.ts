@@ -118,13 +118,18 @@ export class RapidAPITikTokAdapter extends MockProvider {
         if (!u || !s || s.followerCount === undefined) {
           throw new Error("response missing user/stats");
         }
-        // Same wrong-account guard as the IG adapter — tikwm has been known
-        // to return unrelated profiles for handles it can't resolve.
+        // Same STRICT wrong-account guard as the IG adapter — refuse when
+        // the response either omits uniqueId or returns a non-matching one.
+        // Without a positive match we can't confirm we got the right
+        // account, so we treat it as not-found rather than risk wrong data.
         const returnedUsername = (u.uniqueId ?? "").toLowerCase();
         const requested = handle.toLowerCase();
-        if (returnedUsername && returnedUsername !== requested) {
+        console.log(
+          `[rapidapi-tiktok] getProfile requested="${requested}" returned_uniqueId="${returnedUsername || "<empty>"}" followers=${s.followerCount}`,
+        );
+        if (returnedUsername !== requested) {
           console.warn(
-            `[rapidapi-tiktok] getProfile handle mismatch — requested "${requested}", got "${returnedUsername}". Refusing to avoid wrong-account data.`,
+            `[rapidapi-tiktok] getProfile handle mismatch — requested "${requested}", got "${returnedUsername || "<empty>"}". Refusing to avoid wrong-account data.`,
           );
           throw new HandleNotFoundError(handle, "tiktok");
         }

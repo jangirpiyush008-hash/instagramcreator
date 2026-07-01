@@ -183,14 +183,19 @@ export class RapidAPIInstagramAdapter extends MockProvider {
         // Guard against wrong-account matches. RockSolid has been observed
         // returning a completely different profile when the requested handle
         // is a small / new account it can't resolve (e.g. `ashwarya_gg` →
-        // some 458k-follower unrelated account). If the response's username
-        // doesn't match what we asked for (case-insensitive), refuse — it
-        // would corrupt every downstream tool.
+        // some 458k-follower unrelated account). STRICT MODE — refuse
+        // whenever the response either omits the username OR returns one
+        // that doesn't match what we asked for. Without a positive-match
+        // confirmation we can't be sure it's the right account, so we
+        // treat it as not-found rather than risk showing wrong data.
         const returnedUsername = (u.username ?? "").toLowerCase();
         const requested = handle.toLowerCase();
-        if (returnedUsername && returnedUsername !== requested) {
+        console.log(
+          `[rapidapi-ig-stable] getProfile requested="${requested}" returned_username="${returnedUsername || "<empty>"}" followers=${followers}`,
+        );
+        if (returnedUsername !== requested) {
           console.warn(
-            `[rapidapi-ig-stable] getProfile handle mismatch — requested "${requested}", got "${returnedUsername}". Refusing to avoid wrong-account data.`,
+            `[rapidapi-ig-stable] getProfile handle mismatch — requested "${requested}", got "${returnedUsername || "<empty>"}". Refusing to avoid wrong-account data.`,
           );
           throw new HandleNotFoundError(handle, "instagram");
         }
