@@ -21,6 +21,10 @@ interface Props {
     comments?: number;
     views?: number;
   };
+  // Multi-select mode — parent shows a checkbox overlay and reacts to toggles.
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 function formatDuration(sec?: number): string {
@@ -52,7 +56,7 @@ function formatCount(n?: number): string | undefined {
 // with an inline <video> player. Both go through /api/proxy/media so hotlink
 // protection can't block them. Download button downloads the highest-quality
 // video (or thumbnail if the post has no video).
-export function MediaCard({ platform, handle, post }: Props) {
+export function MediaCard({ platform, handle, post, selectable, selected, onToggleSelect }: Props) {
   const [playing, setPlaying] = useState(false);
   const hasVideo = Boolean(post.videoUrl ?? post.videoUrlHd);
   const thumbSrc = proxyMediaUrl(post.thumbnailUrlHd ?? post.thumbnailUrl);
@@ -73,7 +77,42 @@ export function MediaCard({ platform, handle, post }: Props) {
   const views = formatCount(post.views);
 
   return (
-    <div className="rounded-xl border border-border bg-card/60 p-3 overflow-hidden">
+    <div
+      className={
+        "rounded-xl border p-3 overflow-hidden transition-all " +
+        (selected
+          ? "border-primary bg-primary/10 ring-2 ring-primary/60"
+          : "border-border bg-card/60")
+      }
+    >
+      {selectable && (
+        <button
+          type="button"
+          onClick={onToggleSelect}
+          aria-pressed={!!selected}
+          aria-label={selected ? "Deselect this post" : "Select this post"}
+          className={
+            "flex items-center gap-2 mb-2 w-full rounded-md px-2 py-1.5 text-xs font-medium transition-all " +
+            (selected
+              ? "bg-primary text-white"
+              : "bg-background/50 border border-border text-muted-foreground hover:border-primary/50 hover:text-foreground")
+          }
+        >
+          <span
+            className={
+              "inline-flex h-4 w-4 items-center justify-center rounded border " +
+              (selected ? "bg-white border-white text-primary" : "border-muted-foreground")
+            }
+          >
+            {selected && (
+              <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M2 6l3 3 5-6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </span>
+          {selected ? "Selected" : "Select for bulk download"}
+        </button>
+      )}
       <div className="relative aspect-video w-full rounded-lg overflow-hidden bg-black">
         {playing && videoSrc ? (
           <video
