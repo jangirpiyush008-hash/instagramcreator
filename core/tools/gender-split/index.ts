@@ -1,9 +1,14 @@
 import type { SocialTool } from "../types";
-import { classifyNames, extractFirstName } from "@/core/data/genderize";
+import { classifyNamesLocal, extractFirstName } from "@/core/data/name-gender";
 import type { FollowerLite } from "@/core/data/adapter";
 
 // Real audience-gender estimate. Samples ~100 followers (public API), extracts
-// their first names, classifies each via genderize.io, aggregates.
+// their first names, classifies each against a curated in-repo dictionary of
+// Indian + Western first names, aggregates.
+//
+// No external API — the dictionary lives at core/data/name-gender.ts and is
+// extended by hand as we see missing names in real scans. Zero cost per call,
+// zero rate limits, zero external dependencies.
 //
 // Fallback path: some accounts have their follower list blocked (private
 // accounts, or providers that just don't expose it). In that case we fall
@@ -71,7 +76,7 @@ export const genderSplit: SocialTool = {
           unknownPct: null,
           source,
           methodology:
-            "We classify audience gender by extracting first names from a public follower sample and looking each name up against a public name→gender dataset (genderize.io). Never biometric, never a face scan.",
+            "We classify audience gender by extracting first names from a public follower sample and looking each name up against our curated in-repo dictionary of Indian and Western first names. Never biometric, never a face scan, never an external API call.",
         },
         locked: {},
         generatedAt: new Date().toISOString(),
@@ -105,14 +110,14 @@ export const genderSplit: SocialTool = {
           classifiableCount,
           source,
           methodology:
-            "We classify audience gender by extracting first names from a public follower sample and looking each name up against a public name→gender dataset (genderize.io). Never biometric, never a face scan.",
+            "We classify audience gender by extracting first names from a public follower sample and looking each name up against our curated in-repo dictionary of Indian and Western first names. Never biometric, never a face scan, never an external API call.",
         },
         locked: {},
         generatedAt: new Date().toISOString(),
       };
     }
 
-    const { aggregate, classified } = await classifyNames(firstNames);
+    const { aggregate, classified } = classifyNamesLocal(firstNames);
     const totalKnown = aggregate.male + aggregate.female;
     const malePct = totalKnown > 0 ? Number(((aggregate.male / totalKnown) * 100).toFixed(1)) : 0;
     const femalePct = totalKnown > 0 ? Number(((aggregate.female / totalKnown) * 100).toFixed(1)) : 0;
@@ -145,7 +150,7 @@ export const genderSplit: SocialTool = {
         source,
         confidence,
         methodology:
-          "We classify audience gender by extracting first names from a public follower sample and looking each name up against a public name→gender dataset (genderize.io). Never biometric, never a face scan. Non-Western names classify with lower accuracy — that's baked into the confidence label. Binary M/F only — non-binary/trans audiences are not distinguished.",
+          "We classify audience gender by extracting first names from a public follower sample and looking each name up against our curated in-repo dictionary of Indian and Western first names. Zero external API calls, zero biometric analysis. Names we don't recognise are counted as 'unclassified' (never guessed) and excluded from the M/F percentages. Binary M/F only — non-binary/trans audiences are not distinguished.",
         topClassifiedNames: classified
           .filter((c) => c.probability >= 0.85)
           .slice(0, 8)
