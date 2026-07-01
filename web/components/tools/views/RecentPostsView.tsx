@@ -85,6 +85,15 @@ export function RecentPostsView({ handle, platform, data, params, onParamsChange
     typeof params?.postCount === "number"
       ? params.postCount
       : (data?.postCount as number | undefined) ?? 20;
+  // YouTube-only: "all" | "videos" | "shorts". Read from params so switching
+  // the pill triggers a refetch through the standard onParamsChange loop.
+  const activeContentType: "all" | "videos" | "shorts" =
+    params?.contentType === "videos" ? "videos" :
+    params?.contentType === "shorts" ? "shorts" :
+    "all";
+  const shortCount = (data?.shortCount as number | undefined) ?? 0;
+  const videoCount = (data?.videoCount as number | undefined) ?? 0;
+  const sampledPool = (data?.sampledPool as number | undefined) ?? 0;
   const mcPlatform: "instagram" | "tiktok" | "youtube" =
     platform === "tiktok" ? "tiktok" : platform === "youtube" ? "youtube" : "instagram";
   const safeHandle = handle.replace(/[^\w.\-]/g, "_");
@@ -135,11 +144,39 @@ export function RecentPostsView({ handle, platform, data, params, onParamsChange
           </SectionTitle>
           <p className="text-xs text-muted-foreground mt-1">
             {followers.toLocaleString()} followers{verified ? " · verified" : ""} · {posts.length} posts shown
+            {platform === "youtube" && sampledPool > 0 && (
+              <> · {videoCount} videos + {shortCount} shorts in last {sampledPool}</>
+            )}
           </p>
         </div>
 
         {onParamsChange && (
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-col items-end gap-2">
+            {platform === "youtube" && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs uppercase tracking-wider text-muted-foreground mr-1">Filter</span>
+                {(["all", "videos", "shorts"] as const).map((ct) => {
+                  const isActive = ct === activeContentType;
+                  const label = ct === "all" ? "All" : ct === "videos" ? "Videos" : "Shorts";
+                  return (
+                    <button
+                      key={ct}
+                      type="button"
+                      onClick={() => onParamsChange({ ...params, contentType: ct })}
+                      className={
+                        "rounded-full px-4 py-1.5 text-sm font-medium transition-all " +
+                        (isActive
+                          ? "bg-gradient-yt text-white shadow-md"
+                          : "border border-border bg-card/60 text-muted-foreground hover:border-primary/50 hover:text-foreground")
+                      }
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs uppercase tracking-wider text-muted-foreground mr-1">Show</span>
             {POST_COUNT_OPTIONS.map((n) => {
               const isActive = n === activeCount;
@@ -159,6 +196,7 @@ export function RecentPostsView({ handle, platform, data, params, onParamsChange
                 </button>
               );
             })}
+            </div>
           </div>
         )}
       </div>
