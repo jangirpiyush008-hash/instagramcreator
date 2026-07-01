@@ -6,11 +6,11 @@ export const engagementRate: SocialTool = {
   intentLabel: "How engaged is this audience?",
   blurb:
     "Average interactions per post as a percent of followers. The single number creators and brands look at first.",
-  platforms: ["instagram", "tiktok"],
+  platforms: ["instagram", "tiktok", "youtube"],
   phase: 0,
   seo: {
     slug: "engagement-rate-calculator",
-    title: "Free Engagement Rate Calculator — Instagram & TikTok",
+    title: "Free Engagement Rate Calculator — Instagram, TikTok Instagram & TikTok YouTube",
     description:
       "Check any public account's real engagement rate in seconds. Public data only — the account is never notified.",
   },

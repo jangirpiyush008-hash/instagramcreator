@@ -5,7 +5,7 @@ import { useState } from "react";
 import { cn } from "@/web/lib/cn";
 import { normalizeHandle, isValidHandle } from "@/core/utils/handle";
 
-type Platform = "instagram" | "tiktok";
+type Platform = "instagram" | "tiktok" | "youtube";
 
 export function ScanForm() {
   const router = useRouter();
@@ -41,6 +41,12 @@ export function ScanForm() {
           label="TikTok"
           accentClass="bg-gradient-tt"
         />
+        <PlatformPill
+          active={platform === "youtube"}
+          onClick={() => setPlatform("youtube")}
+          label="YouTube"
+          accentClass="bg-gradient-yt"
+        />
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
@@ -51,7 +57,7 @@ export function ScanForm() {
           <input
             value={handle}
             onChange={(e) => setHandle(e.target.value)}
-            placeholder="enter your IG or TikTok handle"
+            placeholder="enter an IG, TikTok, or YouTube @handle"
             autoComplete="off"
             spellCheck={false}
             aria-label="Handle"

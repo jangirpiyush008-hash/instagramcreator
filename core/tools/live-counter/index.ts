@@ -20,11 +20,11 @@ export const liveCounter: SocialTool = {
   name: "Follower Growth",
   intentLabel: "Watch this account grow over time",
   blurb: "Real follower growth tracked across every scan. Per-hour and per-day deltas from live data.",
-  platforms: ["instagram", "tiktok"],
+  platforms: ["instagram", "tiktok", "youtube"],
   phase: 0,
   seo: {
     slug: "live-follower-counter",
-    title: "Live Follower Counter — Instagram & TikTok",
+    title: "Live Follower Counter — Instagram, TikTok Instagram & TikTok YouTube",
     description: "Track any public account's follower growth in real time.",
   },
   async run({ platform, handle, data }) {

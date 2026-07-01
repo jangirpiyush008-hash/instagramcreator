@@ -47,11 +47,11 @@ export const unfollowerTracker: SocialTool = {
   name: "Follower Churn Tracker",
   intentLabel: "Is this account losing followers?",
   blurb: "Track follower gains and losses over 7 and 30-day windows. Honest count-delta from real snapshots.",
-  platforms: ["instagram", "tiktok"],
+  platforms: ["instagram", "tiktok", "youtube"],
   phase: 0,
   seo: {
     slug: "unfollower-tracker",
-    title: "Follower Churn Tracker — Instagram & TikTok",
+    title: "Follower Churn Tracker — Instagram, TikTok Instagram & TikTok YouTube",
     description: "See real follower gain and loss trends across any public account.",
   },
   async run({ platform, handle, data }) {

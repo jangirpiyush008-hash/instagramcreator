@@ -6,11 +6,11 @@ export const earningsEstimator: SocialTool = {
   intentLabel: "How much could this creator earn?",
   blurb:
     "Estimate brand-deal and ad rates from public engagement and follower numbers.",
-  platforms: ["instagram", "tiktok"],
+  platforms: ["instagram", "tiktok", "youtube"],
   phase: 0,
   seo: {
     slug: "earnings-estimator",
-    title: "Creator Earnings Estimator — Instagram & TikTok",
+    title: "Creator Earnings Estimator — Instagram, TikTok Instagram & TikTok YouTube",
     description: "Estimate what a public creator account is worth from real engagement.",
   },
   async run({ platform, handle, data }) {

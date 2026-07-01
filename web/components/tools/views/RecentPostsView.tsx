@@ -40,7 +40,7 @@ const POST_COUNT_OPTIONS = [12, 20, 30, 50];
 // "Save As" flow per file instead of a fragile ZIP.
 async function bulkDownload(
   posts: RawPost[],
-  platform: "instagram" | "tiktok",
+  platform: "instagram" | "tiktok" | "youtube",
   handle: string,
 ) {
   for (let i = 0; i < posts.length; i++) {
@@ -73,7 +73,8 @@ export function RecentPostsView({ handle, platform, data, params, onParamsChange
     typeof params?.postCount === "number"
       ? params.postCount
       : (data?.postCount as number | undefined) ?? 20;
-  const mcPlatform: "instagram" | "tiktok" = platform === "tiktok" ? "tiktok" : "instagram";
+  const mcPlatform: "instagram" | "tiktok" | "youtube" =
+    platform === "tiktok" ? "tiktok" : platform === "youtube" ? "youtube" : "instagram";
   const safeHandle = handle.replace(/[^\w.\-]/g, "_");
 
   const [selectMode, setSelectMode] = useState(false);

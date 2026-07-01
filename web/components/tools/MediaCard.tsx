@@ -4,7 +4,7 @@ import { useState } from "react";
 import { proxyMediaUrl } from "@/web/lib/media";
 
 interface Props {
-  platform: "instagram" | "tiktok";
+  platform: "instagram" | "tiktok" | "youtube";
   handle: string;
   post: {
     id: string;
@@ -155,6 +155,25 @@ export function MediaCard({ platform, handle, post, selectable, selected, onTogg
                 </span>
               </button>
             )}
+            {!hasVideo && platform === "youtube" && post.permalink && (
+              // YouTube doesn't expose downloadable video URLs (yt-dlp is a
+              // TOS violation risk), so instead of a broken play button we
+              // send viewers to youtube.com to watch. Same visual affordance
+              // as the play button — feels native.
+              <a
+                href={post.permalink}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Watch on YouTube"
+                className="absolute inset-0 flex items-center justify-center group"
+              >
+                <span className="rounded-full bg-white/95 text-[hsl(0_90%_45%)] h-16 w-16 flex items-center justify-center shadow-xl transition-transform group-hover:scale-110">
+                  <svg viewBox="0 0 24 24" className="h-8 w-8 ml-1" fill="currentColor">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </span>
+              </a>
+            )}
             {duration && (
               <div className="absolute bottom-3 right-3 rounded-md bg-black/70 px-2 py-1 text-xs text-white">
                 {duration}
@@ -200,7 +219,7 @@ export function MediaCard({ platform, handle, post, selectable, selected, onTogg
             rel="noopener noreferrer"
             className="text-xs rounded-md border border-border bg-background/50 px-3 py-1.5 hover:border-primary/50 transition ml-auto"
           >
-            Open on {platform === "tiktok" ? "TikTok" : "Instagram"} ↗
+            Open on {platform === "tiktok" ? "TikTok" : platform === "youtube" ? "YouTube" : "Instagram"} ↗
           </a>
         )}
       </div>

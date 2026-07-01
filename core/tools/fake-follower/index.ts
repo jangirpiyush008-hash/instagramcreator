@@ -19,11 +19,11 @@ export const fakeFollower: SocialTool = {
   name: "Real Follower Check",
   intentLabel: "How real is this follower count?",
   blurb: "Estimate audience quality from real engagement and follow ratios — no third-party audit API required.",
-  platforms: ["instagram", "tiktok"],
+  platforms: ["instagram", "tiktok", "youtube"],
   phase: 0,
   seo: {
     slug: "real-follower-check",
-    title: "Real Follower Check — Instagram & TikTok",
+    title: "Real Follower Check — Instagram, TikTok Instagram & TikTok YouTube",
     description: "See how real an account's audience is from public engagement signals.",
   },
   async run({ platform, handle, data }) {

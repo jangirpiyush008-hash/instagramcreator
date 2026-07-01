@@ -59,7 +59,7 @@ export function CommentPickerView({ platform, handle, entitled, data }: Props) {
 
       {post && (
         <MediaCard
-          platform={platform === "tiktok" ? "tiktok" : "instagram"}
+          platform={platform === "tiktok" ? "tiktok" : platform === "youtube" ? "youtube" : "instagram"}
           handle={handle.replace(/[^\w.\-]/g, "_")}
           post={{
             id: post.id ?? "post",

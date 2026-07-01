@@ -88,7 +88,8 @@ export function EarningsEstimatorView({ handle, platform, entitled, data }: Prop
       {(() => {
         const samplePosts = (data?.samplePosts as RawPost[] | undefined) ?? [];
         if (samplePosts.length === 0) return null;
-        const mcPlatform: "instagram" | "tiktok" = platform === "tiktok" ? "tiktok" : "instagram";
+        const mcPlatform: "instagram" | "tiktok" | "youtube" =
+          platform === "tiktok" ? "tiktok" : platform === "youtube" ? "youtube" : "instagram";
         const safeHandle = handle.replace(/[^\w.\-]/g, "_");
         return (
           <section>

@@ -12,11 +12,11 @@ export const recentPosts: SocialTool = {
   name: "Recent Posts",
   intentLabel: "Grab all their recent posts",
   blurb: "Download and preview the last 12-50 public posts. Individual MP4 downloads for each video.",
-  platforms: ["instagram", "tiktok"],
+  platforms: ["instagram", "tiktok", "youtube"],
   phase: 0,
   seo: {
     slug: "recent-posts-downloader",
-    title: "Recent Posts Downloader — Instagram & TikTok",
+    title: "Recent Posts Downloader — Instagram, TikTok Instagram & TikTok YouTube",
     description: "Grid gallery of the last public posts on any account with per-post MP4 download.",
   },
   async run({ platform, handle, data, params }) {

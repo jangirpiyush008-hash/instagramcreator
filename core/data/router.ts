@@ -23,9 +23,12 @@ export function adapterFor(platform: Platform): DataAdapter {
 
   switch (platform) {
     case "youtube":
-      return process.env.YOUTUBE_API_KEY
-        ? new YouTubeOfficialAdapter()
-        : new MockProvider("instagram");
+      // Always return the real adapter. If YOUTUBE_API_KEY isn't set, the
+      // adapter's requireKey() throws a DataSourceError on the first real
+      // call — the same honest-error pattern as IG/TikTok. We never want to
+      // silently fall back to MockProvider on YouTube either (that was the
+      // "seeded mock returned as real" bug we already fixed once).
+      return new YouTubeOfficialAdapter();
     case "instagram":
       return hasRapidApi
         ? new RapidAPIInstagramAdapter()

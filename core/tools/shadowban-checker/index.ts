@@ -26,11 +26,11 @@ export const shadowbanChecker: SocialTool = {
   name: "Shadowban Checker",
   intentLabel: "Is this account being hidden from the feed?",
   blurb: "Detect reach drops by comparing public post visibility against follower count and recent-vs-older trends.",
-  platforms: ["instagram", "tiktok"],
+  platforms: ["instagram", "tiktok", "youtube"],
   phase: 0,
   seo: {
     slug: "shadowban-checker",
-    title: "Shadowban Checker — Instagram & TikTok",
+    title: "Shadowban Checker — Instagram, TikTok Instagram & TikTok YouTube",
     description: "Public-data check for reach drops and shadowbans.",
   },
   async run({ platform, handle, data }) {

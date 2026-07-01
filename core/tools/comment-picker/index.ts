@@ -5,11 +5,11 @@ export const commentPicker: SocialTool = {
   name: "Comment Picker",
   intentLabel: "Pick a giveaway winner",
   blurb: "Pick a random winner from the comments on any public post — duplicates filtered.",
-  platforms: ["instagram", "tiktok"],
+  platforms: ["instagram", "tiktok", "youtube"],
   phase: 0,
   seo: {
     slug: "giveaway-comment-picker",
-    title: "Giveaway Comment Picker — Instagram & TikTok",
+    title: "Giveaway Comment Picker — Instagram, TikTok Instagram & TikTok YouTube",
     description: "Fair, random winner picker from public post comments.",
   },
   async run({ platform, handle, data }) {

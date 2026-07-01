@@ -5,11 +5,11 @@ export const thumbnailDownloader: SocialTool = {
   name: "Thumbnail Downloader",
   intentLabel: "Grab the cover image",
   blurb: "Pull the full-res thumbnail or cover image from any public post.",
-  platforms: ["instagram", "tiktok"],
+  platforms: ["instagram", "tiktok", "youtube"],
   phase: 0,
   seo: {
     slug: "thumbnail-downloader",
-    title: "Free Thumbnail Downloader — Instagram & TikTok",
+    title: "Free Thumbnail Downloader — Instagram, TikTok Instagram & TikTok YouTube",
     description: "Download high-res thumbnails and cover images from any public post.",
   },
   async run({ platform, handle, data }) {

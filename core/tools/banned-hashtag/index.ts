@@ -73,11 +73,11 @@ export const bannedHashtag: SocialTool = {
   name: "Banned Hashtag Checker",
   intentLabel: "Is this hashtag banned or restricted?",
   blurb: "Cross-check any hashtag against a curated list of known-banned and shadowbanned tags on Instagram and TikTok.",
-  platforms: ["instagram", "tiktok"],
+  platforms: ["instagram", "tiktok", "youtube"],
   phase: 0,
   seo: {
     slug: "banned-hashtag-checker",
-    title: "Banned Hashtag Checker — Instagram & TikTok",
+    title: "Banned Hashtag Checker — Instagram, TikTok Instagram & TikTok YouTube",
     description: "Find out if a hashtag is restricted before you post.",
   },
   async run({ platform, handle }) {

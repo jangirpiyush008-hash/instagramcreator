@@ -21,6 +21,9 @@ const ALLOWED_HOST_PATTERNS = [
   /(^|\.)cdninstagram\.com$/i,
   /(^|\.)fbcdn\.net$/i,
   /(^|\.)tikwm\.com$/i,
+  // YouTube thumbnail CDNs.
+  /(^|\.)ytimg\.com$/i,
+  /(^|\.)googleusercontent\.com$/i,
 ];
 
 function isAllowedUrl(raw: string): URL | null {

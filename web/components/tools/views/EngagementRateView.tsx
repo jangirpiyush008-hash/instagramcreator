@@ -63,7 +63,8 @@ export function EngagementRateView({ entitled, data, handle, platform, params, o
   };
   const trend = (src.trend as number[] | undefined) ?? SAMPLE.trend;
   const topPosts = (src.topPosts as RawPost[] | undefined) ?? [];
-  const mcPlatform: "instagram" | "tiktok" = platform === "tiktok" ? "tiktok" : "instagram";
+  const mcPlatform: "instagram" | "tiktok" | "youtube" =
+    platform === "tiktok" ? "tiktok" : platform === "youtube" ? "youtube" : "instagram";
   const safeHandle = handle.replace(/[^\w.\-]/g, "_");
 
   return (

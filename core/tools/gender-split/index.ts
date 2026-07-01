@@ -27,11 +27,11 @@ export const genderSplit: SocialTool = {
   intentLabel: "What's the male / female split?",
   blurb:
     "Estimate audience gender by classifying the first names of a follower sample. Free names-only, no biometric analysis.",
-  platforms: ["instagram", "tiktok"],
+  platforms: ["instagram", "tiktok", "youtube"],
   phase: 0,
   seo: {
     slug: "audience-demographics",
-    title: "Audience Gender Split — Instagram & TikTok",
+    title: "Audience Gender Split — Instagram, TikTok Instagram & TikTok YouTube",
     description:
       "Estimate any public account's audience gender from public follower names.",
   },

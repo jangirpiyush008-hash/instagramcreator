@@ -55,7 +55,7 @@ export function ThumbnailDownloaderView({ handle, platform, entitled: _entitled,
 
       <div className="grid lg:grid-cols-[1.4fr_1fr] gap-4">
         <MediaCard
-          platform={platform === "tiktok" ? "tiktok" : "instagram"}
+          platform={platform === "tiktok" ? "tiktok" : platform === "youtube" ? "youtube" : "instagram"}
           handle={safeHandle}
           post={{
             id: post.id ?? "post",
