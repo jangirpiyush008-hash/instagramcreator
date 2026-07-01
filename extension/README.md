@@ -39,10 +39,40 @@ DevTools (right-click popup → **Inspect**) — errors surface in the console.
 
 ## Icons
 
-The `icons/` folder currently has placeholder PNGs. Before publishing to the
-Chrome Web Store, replace them with proper 16 / 32 / 48 / 128px PNGs. Any
-online icon generator (or Figma export) works — just match the pink→purple
-gradient of the site's logo.
+The extension currently loads **without any icon PNGs** — Chrome uses its
+default puzzle-piece icon. This is fine for dev. Before publishing to the
+Chrome Web Store, generate real PNGs from the source SVG:
+
+```bash
+npm install --no-save sharp
+node extension/build-icons.mjs
+```
+
+That writes `icons/icon-16.png`, `icon-32.png`, `icon-48.png`, `icon-128.png`.
+Then add this block back to `manifest.json`:
+
+```json
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+```
+
+…and inside `"action"`:
+
+```json
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png"
+    }
+```
+
+Reload the extension after editing the manifest. Alternatively, any online
+SVG→PNG converter (cloudconvert.com, svgtopng.com) works — just export at
+the four sizes above.
 
 ## Publishing to the Chrome Web Store
 
