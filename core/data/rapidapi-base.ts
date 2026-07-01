@@ -1,7 +1,7 @@
 // Tiny shared helper for any RapidAPI-marketplace adapter.
 // Handles auth headers, timeouts, and JSON parsing in one place.
 
-import { DataSourceError } from "../utils/errors";
+import { DataSourceError, ProviderRateLimitError } from "../utils/errors";
 
 export interface RapidAPIConfig {
   apiKey: string;
@@ -31,12 +31,16 @@ export async function rapidApiFetch<T>(
       signal: controller.signal,
       cache: "no-store",
     });
+    if (res.status === 429) {
+      throw new ProviderRateLimitError(config.host, path);
+    }
     if (!res.ok) {
       // Don't bubble the response body (may contain key or PII) — just status.
       throw new DataSourceError(`RapidAPI ${config.host} returned ${res.status}`);
     }
     return (await res.json()) as T;
   } catch (e) {
+    if (e instanceof ProviderRateLimitError) throw e;
     if (e instanceof DataSourceError) throw e;
     if (e instanceof Error && e.name === "AbortError") {
       throw new DataSourceError(`RapidAPI ${config.host} timeout after 12s`);

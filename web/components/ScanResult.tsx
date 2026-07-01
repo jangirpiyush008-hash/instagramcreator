@@ -150,6 +150,25 @@ function LiveScan({
         </div>
       );
     }
+    // Upstream provider rate-limited us. Show honest message instead of
+    // silently faking data — that was the whole point of adding this code.
+    if (state.code === "provider_rate_limit") {
+      return (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-8 text-center space-y-3">
+          <div className="text-4xl">⏳</div>
+          <h3 className="text-xl font-semibold">Upstream data provider is rate-limited</h3>
+          <p className="text-muted-foreground max-w-md mx-auto">
+            {state.message}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="rounded-lg bg-gradient-ig text-white px-4 py-2 text-sm font-medium"
+          >
+            Try again
+          </button>
+        </div>
+      );
+    }
     // Account not found — the provider returned a different profile than
     // requested (fuzzy-match fallback), so we refused rather than show
     // wrong-account data.

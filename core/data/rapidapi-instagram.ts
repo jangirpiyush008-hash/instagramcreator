@@ -12,7 +12,7 @@
 import type { Platform } from "../types";
 import type { Profile, Post, UsernameAvailability, CommentItem } from "./adapter";
 import { MockProvider } from "./mock-provider";
-import { DataSourceError, HandleNotFoundError, PrivateAccountError } from "../utils/errors";
+import { DataSourceError, HandleNotFoundError, PrivateAccountError, ProviderRateLimitError } from "../utils/errors";
 
 interface ProviderEnvelope {
   // RockSolid endpoints wrap payloads inconsistently:
@@ -125,6 +125,9 @@ export class RapidAPIInstagramAdapter extends MockProvider {
         signal: controller.signal,
         cache: "no-store",
       });
+      if (res.status === 429) {
+        throw new ProviderRateLimitError(this.host, path);
+      }
       if (!res.ok) {
         throw new DataSourceError(`${this.host} ${method} ${path} returned ${res.status}`);
       }
@@ -150,11 +153,14 @@ export class RapidAPIInstagramAdapter extends MockProvider {
     try {
       return await fn();
     } catch (e) {
-      // PrivateAccountError and HandleNotFoundError are intentional — never
-      // mask them with mock data. The API route catches them and shows the
-      // corresponding UI ("private account" / "not found") to the user.
+      // PrivateAccountError, HandleNotFoundError, and ProviderRateLimitError
+      // are intentional — never mask them with mock data. Silently falling
+      // back to seeded mock on a 429 was the root cause of the whole
+      // "wrong follower count" bug (mock data got returned as if it were
+      // real). The API route catches these and shows the correct UI.
       if (e instanceof PrivateAccountError) throw e;
       if (e instanceof HandleNotFoundError) throw e;
+      if (e instanceof ProviderRateLimitError) throw e;
       console.warn(
         `[rapidapi-ig-stable] ${label} failed, falling back to mock:`,
         e instanceof Error ? e.message : e,

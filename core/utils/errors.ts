@@ -37,6 +37,16 @@ export class HandleNotFoundError extends Error {
   }
 }
 
+// Thrown when the upstream RapidAPI provider returns 429 (rate limit).
+// Bubbles past safe()'s mock fallback so the user sees a real "provider
+// rate limited" message instead of silently-generated fake data.
+export class ProviderRateLimitError extends Error {
+  constructor(public readonly host: string, public readonly path: string) {
+    super(`Upstream provider ${host} is rate-limited right now. Please try again in a minute.`);
+    this.name = "ProviderRateLimitError";
+  }
+}
+
 export class PaymentError extends Error {
   constructor(message: string, public override readonly cause?: unknown) {
     super(message);

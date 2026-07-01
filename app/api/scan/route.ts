@@ -17,6 +17,7 @@ import {
   HandleNotFoundError,
   NotImplementedError,
   PrivateAccountError,
+  ProviderRateLimitError,
   RateLimitError,
 } from "@/core/utils/errors";
 
@@ -135,6 +136,12 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { ok: false, error: e.message, code: "not_found" },
         { status: 404 },
+      );
+    }
+    if (e instanceof ProviderRateLimitError) {
+      return NextResponse.json(
+        { ok: false, error: e.message, code: "provider_rate_limit" },
+        { status: 503 },
       );
     }
     if (e instanceof PrivateAccountError) {

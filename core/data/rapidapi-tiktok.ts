@@ -5,7 +5,7 @@ import type { Platform } from "../types";
 import type { Profile, Post, UsernameAvailability, CommentItem } from "./adapter";
 import { MockProvider } from "./mock-provider";
 import { rapidApiFetch, type RapidAPIConfig } from "./rapidapi-base";
-import { HandleNotFoundError, PrivateAccountError } from "../utils/errors";
+import { HandleNotFoundError, PrivateAccountError, ProviderRateLimitError } from "../utils/errors";
 
 interface RawUserInfo {
   data?: {
@@ -97,9 +97,11 @@ export class RapidAPITikTokAdapter extends MockProvider {
     try {
       return await fn();
     } catch (e) {
-      // Private accounts and handle-not-found must surface, never mask.
+      // Private accounts, handle-not-found, and upstream rate limits must
+      // all surface honestly — never mask them with mock data.
       if (e instanceof PrivateAccountError) throw e;
       if (e instanceof HandleNotFoundError) throw e;
+      if (e instanceof ProviderRateLimitError) throw e;
       console.warn(`[rapidapi-tiktok] ${label} failed, falling back to mock:`, e instanceof Error ? e.message : e);
       return fallback();
     }
