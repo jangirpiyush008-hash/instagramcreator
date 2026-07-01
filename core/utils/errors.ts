@@ -19,6 +19,13 @@ export class RateLimitError extends Error {
   }
 }
 
+export class PrivateAccountError extends Error {
+  constructor(public readonly handle: string, public readonly platform: string) {
+    super(`@${handle} is a private ${platform} account — only public accounts can be analyzed.`);
+    this.name = "PrivateAccountError";
+  }
+}
+
 export class PaymentError extends Error {
   constructor(message: string, public override readonly cause?: unknown) {
     super(message);

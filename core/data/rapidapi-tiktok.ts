@@ -5,6 +5,7 @@ import type { Platform } from "../types";
 import type { Profile, Post, UsernameAvailability, CommentItem } from "./adapter";
 import { MockProvider } from "./mock-provider";
 import { rapidApiFetch, type RapidAPIConfig } from "./rapidapi-base";
+import { PrivateAccountError } from "../utils/errors";
 
 interface RawUserInfo {
   data?: {
@@ -15,6 +16,9 @@ interface RawUserInfo {
       verified?: boolean;
       signature?: string;
       avatarLarger?: string;
+      // TikTok exposes private profiles via privateAccount / secret flags
+      privateAccount?: boolean;
+      secret?: boolean;
     };
     stats?: {
       followerCount?: number;
@@ -71,6 +75,8 @@ export class RapidAPITikTokAdapter extends MockProvider {
     try {
       return await fn();
     } catch (e) {
+      // Private accounts must surface, never mask with mock.
+      if (e instanceof PrivateAccountError) throw e;
       console.warn(`[rapidapi-tiktok] ${label} failed, falling back to mock:`, e instanceof Error ? e.message : e);
       return fallback();
     }
@@ -89,12 +95,16 @@ export class RapidAPITikTokAdapter extends MockProvider {
         if (!u || !s || s.followerCount === undefined) {
           throw new Error("response missing user/stats");
         }
+        if (u.privateAccount === true || u.secret === true) {
+          throw new PrivateAccountError(handle, "tiktok");
+        }
         return {
           handle,
           displayName: u.nickname ?? handle,
           followers: s.followerCount,
           following: s.followingCount ?? 0,
           verified: u.verified ?? false,
+          isPrivate: false,
           avatarUrl: u.avatarLarger,
           bio: u.signature,
         };

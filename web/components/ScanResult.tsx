@@ -127,6 +127,22 @@ function LiveScan({
 
   // Backend is gated (no env / not implemented for this platform) — fall back to demo with banner.
   if (state.kind === "error") {
+    // Private account: surface a clean message, no demo, no paywall.
+    if (state.code === "private_account") {
+      return (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-8 text-center space-y-3">
+          <div className="text-4xl">🔒</div>
+          <h3 className="text-xl font-semibold">This account is private</h3>
+          <p className="text-muted-foreground max-w-md mx-auto">
+            DecodeCreator only analyzes <span className="font-medium">public</span> accounts.
+            We can't see private profiles' followers, posts, or engagement — that's by design.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Tip: try a different handle, or ask the account owner to make their profile public.
+          </p>
+        </div>
+      );
+    }
     const isComingSoon = state.code === "not_implemented";
     return (
       <div className="space-y-6">

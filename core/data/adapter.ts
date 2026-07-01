@@ -6,6 +6,7 @@ export interface Profile {
   followers: number;
   following: number;
   verified: boolean;
+  isPrivate?: boolean;
   avatarUrl?: string;
   // optional demographic / location signals when available
   bio?: string;

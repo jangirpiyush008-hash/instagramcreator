@@ -5,7 +5,12 @@ import { Button } from "@/web/components/ui/Button";
 import { Input } from "@/web/components/ui/Input";
 import { supabaseBrowser } from "@/web/lib/supabase-browser";
 
-export function LoginForm({ next }: { next: string }) {
+// Supabase's Redirect URL allowlist does strict URL matching — query params
+// like ?next=/account cause Supabase to reject the redirect and silently fall
+// back to Site URL (home page). We keep the URL clean here and let the
+// callback route always send authed users to /account. Deep-link "return to
+// where you came from" can be added later via a cookie.
+export function LoginForm({ next: _next }: { next: string }) {
   const [email, setEmail] = useState("");
   const [state, setState] = useState<
     | { kind: "idle" }
@@ -22,7 +27,7 @@ export function LoginForm({ next }: { next: string }) {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${siteUrl}/auth/callback?next=${encodeURIComponent(next)}`,
+        emailRedirectTo: `${siteUrl}/auth/callback`,
       },
     });
     if (error) {
@@ -37,7 +42,7 @@ export function LoginForm({ next }: { next: string }) {
     const siteUrl = window.location.origin;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${siteUrl}/auth/callback?next=${encodeURIComponent(next)}` },
+      options: { redirectTo: `${siteUrl}/auth/callback` },
     });
     if (error) setState({ kind: "error", message: error.message });
   }

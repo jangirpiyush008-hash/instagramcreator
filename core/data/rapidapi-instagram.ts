@@ -12,7 +12,7 @@
 import type { Platform } from "../types";
 import type { Profile, Post, UsernameAvailability, CommentItem } from "./adapter";
 import { MockProvider } from "./mock-provider";
-import { DataSourceError } from "../utils/errors";
+import { DataSourceError, PrivateAccountError } from "../utils/errors";
 
 interface ProviderEnvelope {
   // Most RockSolid endpoints either return the payload at top level,
@@ -29,6 +29,7 @@ interface IgUserRaw {
   full_name?: string;
   biography?: string;
   is_verified?: boolean;
+  is_private?: boolean;
   follower_count?: number;
   following_count?: number;
   edge_followed_by?: { count?: number };
@@ -126,6 +127,9 @@ export class RapidAPIInstagramAdapter extends MockProvider {
     try {
       return await fn();
     } catch (e) {
+      // PrivateAccountError is intentional — never mask it with mock data,
+      // the API route catches it and shows the "private account" UI.
+      if (e instanceof PrivateAccountError) throw e;
       console.warn(
         `[rapidapi-ig-stable] ${label} failed, falling back to mock:`,
         e instanceof Error ? e.message : e,
@@ -148,12 +152,19 @@ export class RapidAPIInstagramAdapter extends MockProvider {
         if (followers === null) {
           throw new DataSourceError("response missing follower count");
         }
+        // Refuse private accounts immediately — bubble a PrivateAccountError
+        // that the safe() wrapper deliberately re-throws (see below) so the
+        // scan API can return a clean 422 instead of falling back to mock.
+        if (u.is_private === true) {
+          throw new PrivateAccountError(handle, "instagram");
+        }
         return {
           handle,
           displayName: u.full_name ?? handle,
           followers,
           following: u.following_count ?? u.edge_follow?.count ?? 0,
           verified: u.is_verified ?? false,
+          isPrivate: false,
           avatarUrl: u.profile_pic_url_hd ?? u.profile_pic_url,
           bio: u.biography,
         };
