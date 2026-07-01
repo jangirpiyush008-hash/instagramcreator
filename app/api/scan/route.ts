@@ -73,8 +73,13 @@ export async function POST(req: Request) {
     }
 
     // 5) entitlement gate — return blurred locked values for non-entitled users
-    const entitled = await isEntitled(supa, user?.id ?? null, key);
-    const responseResult = entitled ? result : blurLocked(result);
+    // DEV: force-unlocked while we build/test the full product. Real gate
+    // returns via `isEntitled(supa, user?.id ?? null, key)` — restore before
+    // going live with payments.
+    const entitled = true;
+    void isEntitled;
+    void blurLocked;
+    const responseResult = result;
 
     return NextResponse.json({
       ok: true,

@@ -20,9 +20,17 @@ export interface Post {
   views?: number;
   postedAt: string;
   thumbnailUrl?: string;
+  // Highest-quality thumbnail available, for HD download slot.
+  thumbnailUrlHd?: string;
   title?: string;
   caption?: string;
   durationSec?: number;
+  // Playable video URL. Watermarked variant for TikTok; the plain video URL for IG.
+  videoUrl?: string;
+  // Non-watermarked / HD variant when the provider exposes one.
+  videoUrlHd?: string;
+  // Deep-link back to the original post on the platform.
+  permalink?: string;
 }
 
 export interface CommentItem {

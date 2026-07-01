@@ -57,10 +57,16 @@ interface IgPostRaw {
   taken_at_timestamp?: number;
   thumbnail_src?: string;
   display_url?: string;
-  image_versions2?: { candidates?: { url?: string }[] };
+  image_versions2?: { candidates?: { url?: string; width?: number; height?: number }[] };
   caption?: { text?: string } | null;
   edge_media_to_caption?: { edges?: { node?: { text?: string } }[] };
   video_duration?: number;
+  // Media type flags: is_video (older shape) or media_type === 2 for reels/videos.
+  is_video?: boolean;
+  media_type?: number;
+  // Video URL fields — RockSolid can return any of these depending on post type.
+  video_url?: string;
+  video_versions?: { url?: string; type?: number; width?: number; height?: number }[];
   // RockSolid nests the author under user with is_private / is_verified
   user?: { username?: string; is_private?: boolean; is_verified?: boolean };
 }
@@ -218,28 +224,45 @@ export class RapidAPIInstagramAdapter extends MockProvider {
         if (firstAuthor?.is_private === true) {
           throw new PrivateAccountError(handle, "instagram");
         }
-        return raw.slice(0, n).map<Post>((p) => ({
+        return raw.slice(0, n).map<Post>((p) => {
           // RockSolid: pk = numeric id, code = shortcode (for building /p/{code}/ urls)
-          id: String(p.code ?? p.shortcode ?? p.pk ?? p.id ?? Math.random().toString(36).slice(2)),
-          likes: p.like_count ?? p.edge_liked_by?.count ?? p.edge_media_preview_like?.count ?? 0,
-          comments: p.comment_count ?? p.edge_media_to_comment?.count ?? 0,
-          views: p.play_count ?? p.video_view_count,
-          postedAt: p.taken_at
-            ? new Date(p.taken_at * 1000).toISOString()
-            : p.taken_at_timestamp
-            ? new Date(p.taken_at_timestamp * 1000).toISOString()
-            : new Date().toISOString(),
-          thumbnailUrl:
-            p.thumbnail_src ??
-            p.display_url ??
-            p.image_versions2?.candidates?.[0]?.url,
-          title:
-            p.caption?.text?.slice(0, 80) ??
-            p.edge_media_to_caption?.edges?.[0]?.node?.text?.slice(0, 80),
-          caption:
-            p.caption?.text ?? p.edge_media_to_caption?.edges?.[0]?.node?.text,
-          durationSec: p.video_duration,
-        }));
+          const shortcode = String(p.code ?? p.shortcode ?? p.pk ?? p.id ?? Math.random().toString(36).slice(2));
+          // Pick highest-resolution thumbnail from image_versions2 candidates
+          // (candidates are typically sorted largest→smallest, but sort defensively).
+          const candidates = p.image_versions2?.candidates ?? [];
+          const largestThumb = candidates
+            .slice()
+            .sort((a, b) => (b.width ?? 0) - (a.width ?? 0))[0]?.url;
+          // Highest-bandwidth video variant from video_versions.
+          const bestVideo = (p.video_versions ?? [])
+            .slice()
+            .sort((a, b) => (b.width ?? 0) - (a.width ?? 0))[0]?.url;
+          return {
+            id: shortcode,
+            likes: p.like_count ?? p.edge_liked_by?.count ?? p.edge_media_preview_like?.count ?? 0,
+            comments: p.comment_count ?? p.edge_media_to_comment?.count ?? 0,
+            views: p.play_count ?? p.video_view_count,
+            postedAt: p.taken_at
+              ? new Date(p.taken_at * 1000).toISOString()
+              : p.taken_at_timestamp
+              ? new Date(p.taken_at_timestamp * 1000).toISOString()
+              : new Date().toISOString(),
+            thumbnailUrl:
+              p.thumbnail_src ??
+              p.display_url ??
+              candidates[0]?.url,
+            thumbnailUrlHd: largestThumb ?? p.display_url ?? p.thumbnail_src,
+            title:
+              p.caption?.text?.slice(0, 80) ??
+              p.edge_media_to_caption?.edges?.[0]?.node?.text?.slice(0, 80),
+            caption:
+              p.caption?.text ?? p.edge_media_to_caption?.edges?.[0]?.node?.text,
+            durationSec: p.video_duration,
+            videoUrl: p.video_url ?? bestVideo,
+            videoUrlHd: bestVideo ?? p.video_url,
+            permalink: `https://www.instagram.com/p/${shortcode}/`,
+          };
+        });
       },
       () => super.getRecentPosts(platform, handle, n),
     );
@@ -275,15 +298,19 @@ export class RapidAPIInstagramAdapter extends MockProvider {
         if (!post?.thumbnailUrl) {
           throw new DataSourceError("no thumbnail url on first post");
         }
-        return {
-          post,
-          resolutions: [
-            { label: "Standard (640×360)", url: post.thumbnailUrl, locked: false },
-            { label: "HD (1280×720)", url: post.thumbnailUrl, locked: true },
-            { label: "Full HD (1920×1080)", url: post.thumbnailUrl, locked: true },
-            { label: "Max-res (original)", url: post.thumbnailUrl, locked: true },
-          ],
-        };
+        const sd = post.thumbnailUrl;
+        const hd = post.thumbnailUrlHd ?? post.thumbnailUrl;
+        const resolutions: { label: string; url: string; locked: boolean }[] = [
+          { label: "Cover (SD)", url: sd, locked: false },
+          { label: "Cover (HD)", url: hd, locked: false },
+        ];
+        if (post.videoUrl) {
+          resolutions.push({ label: "Video (MP4)", url: post.videoUrl, locked: false });
+        }
+        if (post.videoUrlHd && post.videoUrlHd !== post.videoUrl) {
+          resolutions.push({ label: "Video (HD MP4)", url: post.videoUrlHd, locked: false });
+        }
+        return { post, resolutions };
       },
       () => super.getThumbnail(platform, handle),
     );

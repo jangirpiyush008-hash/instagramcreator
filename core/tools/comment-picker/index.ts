@@ -25,13 +25,27 @@ export const commentPicker: SocialTool = {
         uniqueUsers: Math.floor(totalComments * 0.82),
         duplicatesRemoved: totalComments - Math.floor(totalComments * 0.82),
         winner: { username: winner.username, comment: winner.text },
-      },
-      locked: {
+        post: {
+          id: post.id,
+          title: post.title,
+          caption: post.caption,
+          postedAt: post.postedAt,
+          durationSec: post.durationSec,
+          thumbnailUrl: post.thumbnailUrl,
+          thumbnailUrlHd: post.thumbnailUrlHd,
+          videoUrl: post.videoUrl,
+          videoUrlHd: post.videoUrlHd,
+          permalink: post.permalink,
+          likes: post.likes,
+          comments: post.comments,
+          views: post.views,
+        },
         runnerUps: comments
           .filter((c) => c.id !== winner.id)
           .slice(0, 3)
           .map((c) => ({ username: c.username, comment: c.text })),
       },
+      locked: {},
       generatedAt: new Date().toISOString(),
     };
   },

@@ -2,11 +2,28 @@
 
 import { useState } from "react";
 import { Avatar, MetricCard, SectionTitle } from "../primitives";
+import { MediaCard } from "../MediaCard";
 import type { Platform } from "@/core/types";
 
 interface CommentEntry {
   username: string;
   comment: string;
+}
+
+interface RawPost {
+  id?: string;
+  title?: string;
+  caption?: string;
+  postedAt?: string;
+  durationSec?: number;
+  thumbnailUrl?: string;
+  thumbnailUrlHd?: string;
+  videoUrl?: string;
+  videoUrlHd?: string;
+  permalink?: string;
+  likes?: number;
+  comments?: number;
+  views?: number;
 }
 
 interface Props {
@@ -25,12 +42,13 @@ const FALLBACK_POOL: CommentEntry[] = [
   { username: "meera.creates", comment: "Pick me pick me 🎉" },
 ];
 
-export function CommentPickerView({ handle, entitled, data }: Props) {
+export function CommentPickerView({ platform, handle, entitled, data }: Props) {
   const winner = (data?.winner as CommentEntry | undefined) ?? FALLBACK_WINNER;
   const runnerUps = (data?.runnerUps as CommentEntry[] | undefined) ?? FALLBACK_POOL.slice(1, 4);
   const totalComments = (data?.totalComments as number) ?? 4_812;
   const uniqueUsers = (data?.uniqueUsers as number) ?? 3_994;
   const duplicates = (data?.duplicatesRemoved as number) ?? 818;
+  const post = data?.post as RawPost | undefined;
 
   const [activeWinner, setActiveWinner] = useState(winner);
   const pool = [winner, ...runnerUps];
@@ -38,6 +56,28 @@ export function CommentPickerView({ handle, entitled, data }: Props) {
   return (
     <div className="space-y-6">
       <SectionTitle hint={`from @${handle}'s most recent post`}>Giveaway winner</SectionTitle>
+
+      {post && (
+        <MediaCard
+          platform={platform === "tiktok" ? "tiktok" : "instagram"}
+          handle={handle.replace(/[^\w.\-]/g, "_")}
+          post={{
+            id: post.id ?? "post",
+            caption: post.caption,
+            title: post.title,
+            postedAt: post.postedAt,
+            durationSec: post.durationSec,
+            thumbnailUrl: post.thumbnailUrl,
+            thumbnailUrlHd: post.thumbnailUrlHd,
+            videoUrl: post.videoUrl,
+            videoUrlHd: post.videoUrlHd,
+            permalink: post.permalink,
+            likes: post.likes,
+            comments: post.comments,
+            views: post.views,
+          }}
+        />
+      )}
 
       <div className="rounded-2xl bg-gradient-ig p-[1.5px]">
         <div className="rounded-[calc(theme(borderRadius.2xl)-1.5px)] bg-card p-6 flex items-start gap-5">

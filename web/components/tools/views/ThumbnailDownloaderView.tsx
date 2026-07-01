@@ -1,6 +1,8 @@
 "use client";
 
 import { MetricCard, SectionTitle } from "../primitives";
+import { MediaCard } from "../MediaCard";
+import { proxyMediaUrl } from "@/web/lib/media";
 import type { Platform } from "@/core/types";
 
 interface Props {
@@ -10,98 +12,113 @@ interface Props {
   data?: Record<string, unknown>;
 }
 
-const FALLBACK_RESOLUTIONS = [
-  { label: "Standard (640×360)", locked: false, url: "#" },
-  { label: "HD (1280×720)", locked: true, url: null },
-  { label: "Full HD (1920×1080)", locked: true, url: null },
-  { label: "Max-res (original)", locked: true, url: null },
-];
+interface RawPost {
+  id?: string;
+  title?: string;
+  caption?: string;
+  postedAt?: string;
+  durationSec?: number;
+  thumbnailUrl?: string;
+  thumbnailUrlHd?: string;
+  videoUrl?: string;
+  videoUrlHd?: string;
+  permalink?: string;
+  likes?: number;
+  comments?: number;
+  views?: number;
+}
 
-export function ThumbnailDownloaderView({ handle, platform, entitled, data }: Props) {
-  const post = (data?.post as { title?: string; postedAt?: string } | undefined) ?? {
-    title: "How I built this in a weekend",
-    postedAt: new Date(Date.now() - 2 * 86400_000).toISOString(),
-  };
-  const resolutions =
-    (data?.resolutions as typeof FALLBACK_RESOLUTIONS | undefined) ?? FALLBACK_RESOLUTIONS;
-  const postedAgo = post.postedAt
-    ? `${Math.max(1, Math.round((Date.now() - new Date(post.postedAt).getTime()) / 86400_000))} days ago`
-    : "recently";
+interface RawResolution {
+  label: string;
+  url?: string | null;
+  locked?: boolean;
+}
+
+const FALLBACK_POST: RawPost = {
+  id: "demo",
+  title: "How I built this in a weekend",
+  postedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+  durationSec: 754,
+};
+
+export function ThumbnailDownloaderView({ handle, platform, entitled: _entitled, data }: Props) {
+  const post = (data?.post as RawPost | undefined) ?? FALLBACK_POST;
+  const resolutions = (data?.resolutions as RawResolution[] | undefined) ?? [];
+
+  const safeHandle = handle.replace(/[^\w.\-]/g, "_");
+  const extForLabel = (label: string) =>
+    /video/i.test(label) ? "mp4" : "jpg";
 
   return (
     <div className="space-y-6">
       <SectionTitle hint={`@${handle}`}>Most recent {platform === "tiktok" ? "video" : "post"}</SectionTitle>
 
       <div className="grid lg:grid-cols-[1.4fr_1fr] gap-4">
-        <div className="rounded-xl border border-border bg-card/60 p-3 overflow-hidden">
-          <div
-            className="aspect-video w-full rounded-lg relative overflow-hidden"
-            style={{
-              backgroundImage:
-                "linear-gradient(135deg, hsl(322 95% 50% / 0.85), hsl(268 84% 55% / 0.85)), radial-gradient(circle at 30% 30%, hsl(30 100% 60% / 0.6), transparent 60%)",
-            }}
-          >
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="rounded-full bg-white/95 text-black h-16 w-16 flex items-center justify-center shadow-xl">
-                <svg viewBox="0 0 24 24" className="h-7 w-7 ml-1" fill="currentColor">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </div>
-            </div>
-            <div className="absolute bottom-3 right-3 rounded-md bg-black/70 px-2 py-1 text-xs text-white">
-              12:34
-            </div>
-          </div>
-          <div className="px-2 pt-3 pb-1">
-            <div className="font-medium">{post.title}</div>
-            <div className="text-xs text-muted-foreground mt-0.5">
-              Posted {postedAgo} · public
-            </div>
-          </div>
-        </div>
+        <MediaCard
+          platform={platform === "tiktok" ? "tiktok" : "instagram"}
+          handle={safeHandle}
+          post={{
+            id: post.id ?? "post",
+            caption: post.caption,
+            title: post.title,
+            postedAt: post.postedAt,
+            durationSec: post.durationSec,
+            thumbnailUrl: post.thumbnailUrl,
+            thumbnailUrlHd: post.thumbnailUrlHd,
+            videoUrl: post.videoUrl,
+            videoUrlHd: post.videoUrlHd,
+            permalink: post.permalink,
+            likes: post.likes,
+            comments: post.comments,
+            views: post.views,
+          }}
+        />
 
         <div className="space-y-3">
-          {resolutions.map((s) => {
-            const locked = s.locked && !entitled;
+          {resolutions.length === 0 && (
+            <div className="rounded-xl border border-border bg-card/60 px-4 py-3 text-sm text-muted-foreground">
+              No download variants available for this post.
+            </div>
+          )}
+          {resolutions.map((s, idx) => {
+            const url = s.url ?? undefined;
+            const filename = `${platform}-${safeHandle}-${post.id ?? "post"}-${idx}.${extForLabel(s.label)}`;
+            const href = url ? proxyMediaUrl(url, { filename, download: true }) : undefined;
             return (
-              <button
-                key={s.label}
-                disabled={locked}
+              <a
+                key={`${s.label}-${idx}`}
+                href={href ?? "#"}
+                aria-disabled={!href}
                 className={
-                  "w-full flex items-center justify-between rounded-xl border border-border bg-card/60 px-4 py-3 transition-all " +
-                  (locked
-                    ? "opacity-70 cursor-not-allowed"
-                    : "hover:border-primary/50 hover:-translate-y-0.5")
+                  "block w-full rounded-xl border border-border bg-card/60 px-4 py-3 transition-all " +
+                  (href
+                    ? "hover:border-primary/50 hover:-translate-y-0.5"
+                    : "opacity-60 cursor-not-allowed")
                 }
               >
-                <div className="text-left">
-                  <div className="text-sm font-medium">{s.label}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {locked ? "Unlock to download" : "Click to download"}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-left">
+                    <div className="text-sm font-medium">{s.label}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {href ? "Click to download" : "Not available for this post"}
+                    </div>
                   </div>
+                  <span className="rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider bg-gradient-ig text-white">
+                    {href ? "Free" : "N/A"}
+                  </span>
                 </div>
-                <span
-                  className={
-                    "rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider " +
-                    (locked
-                      ? "border border-border bg-muted text-muted-foreground"
-                      : "bg-gradient-ig text-white")
-                  }
-                >
-                  {locked ? "Locked" : "Free"}
-                </span>
-              </button>
+              </a>
             );
           })}
         </div>
       </div>
 
       <section>
-        <SectionTitle>What's included</SectionTitle>
+        <SectionTitle>What&apos;s included</SectionTitle>
         <div className="grid sm:grid-cols-3 gap-3">
-          <MetricCard label="Free" value="SD" sub="640 × 360 — always" accent="pink" />
-          <MetricCard label="Unlock" value="HD + 4K" sub="up to original-res" accent="cyan" />
-          <MetricCard label="Subscriber" value="Bulk export" sub="last 50 posts at once" accent="amber" />
+          <MetricCard label="Preview" value="Inline player" sub="tap to play the video" accent="pink" />
+          <MetricCard label="Downloads" value="Thumbnail + MP4" sub="proxied, no CDN blocks" accent="cyan" />
+          <MetricCard label="Source" value="Public post" sub="the account is never notified" accent="amber" />
         </div>
       </section>
     </div>

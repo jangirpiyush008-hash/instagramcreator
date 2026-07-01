@@ -45,7 +45,15 @@ interface RawVideo {
   desc?: string;
   cover?: string;
   origin_cover?: string;
+  ai_dynamic_cover?: string;
+  dynamic_cover?: string;
   duration?: number;
+  // tikwm returns the playback URL under several possible fields depending on
+  // whether the video has a watermark or not.
+  play?: string;                 // watermarked download URL
+  wmplay?: string;               // alt watermarked field name
+  hdplay?: string;               // non-watermarked HD URL when available
+  play_url?: string;
 }
 
 // tikwm/tiktok-scraper7 has shipped a few different field names for the video
@@ -152,21 +160,28 @@ export class RapidAPITikTokAdapter extends MockProvider {
           );
           throw new Error("no videos returned");
         }
-        return videos.slice(0, n).map<Post>((v) => ({
-          id: String(v.video_id ?? v.aweme_id ?? v.id ?? Math.random().toString(36).slice(2)),
-          likes: v.digg_count ?? v.like_count ?? 0,
-          comments: v.comment_count ?? 0,
-          views: v.play_count ?? v.view_count,
-          postedAt: v.create_time
-            ? new Date(v.create_time * 1000).toISOString()
-            : v.createTime
-            ? new Date(v.createTime * 1000).toISOString()
-            : new Date().toISOString(),
-          thumbnailUrl: v.cover ?? v.origin_cover,
-          title: (v.title ?? v.desc)?.slice(0, 80),
-          caption: v.title ?? v.desc,
-          durationSec: v.duration,
-        }));
+        return videos.slice(0, n).map<Post>((v) => {
+          const videoId = String(v.video_id ?? v.aweme_id ?? v.id ?? Math.random().toString(36).slice(2));
+          return {
+            id: videoId,
+            likes: v.digg_count ?? v.like_count ?? 0,
+            comments: v.comment_count ?? 0,
+            views: v.play_count ?? v.view_count,
+            postedAt: v.create_time
+              ? new Date(v.create_time * 1000).toISOString()
+              : v.createTime
+              ? new Date(v.createTime * 1000).toISOString()
+              : new Date().toISOString(),
+            thumbnailUrl: v.cover ?? v.origin_cover ?? v.dynamic_cover ?? v.ai_dynamic_cover,
+            thumbnailUrlHd: v.origin_cover ?? v.cover,
+            title: (v.title ?? v.desc)?.slice(0, 80),
+            caption: v.title ?? v.desc,
+            durationSec: v.duration,
+            videoUrl: v.play ?? v.wmplay ?? v.play_url,
+            videoUrlHd: v.hdplay ?? v.play ?? v.play_url,
+            permalink: `https://www.tiktok.com/@${handle}/video/${videoId}`,
+          };
+        });
       },
       () => super.getRecentPosts(platform, handle, n),
     );
@@ -228,15 +243,19 @@ export class RapidAPITikTokAdapter extends MockProvider {
         const posts = await this.getRecentPosts(platform, handle, 1);
         const post = posts[0];
         if (!post?.thumbnailUrl) throw new Error("no thumbnail url");
-        return {
-          post,
-          resolutions: [
-            { label: "Standard (640×360)", url: post.thumbnailUrl, locked: false },
-            { label: "HD (1280×720)", url: post.thumbnailUrl, locked: true },
-            { label: "Full HD (1920×1080)", url: post.thumbnailUrl, locked: true },
-            { label: "Max-res (original)", url: post.thumbnailUrl, locked: true },
-          ],
-        };
+        const sd = post.thumbnailUrl;
+        const hd = post.thumbnailUrlHd ?? post.thumbnailUrl;
+        const resolutions: { label: string; url: string; locked: boolean }[] = [
+          { label: "Cover (SD)", url: sd, locked: false },
+          { label: "Cover (HD)", url: hd, locked: false },
+        ];
+        if (post.videoUrl) {
+          resolutions.push({ label: "Video (watermarked)", url: post.videoUrl, locked: false });
+        }
+        if (post.videoUrlHd && post.videoUrlHd !== post.videoUrl) {
+          resolutions.push({ label: "Video (HD, no watermark)", url: post.videoUrlHd, locked: false });
+        }
+        return { post, resolutions };
       },
       () => super.getThumbnail(platform, handle),
     );

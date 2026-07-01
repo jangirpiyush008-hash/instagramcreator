@@ -22,20 +22,25 @@ export const thumbnailDownloader: SocialTool = {
         post: {
           id: post.id,
           title: post.title,
+          caption: post.caption,
           postedAt: post.postedAt,
           durationSec: post.durationSec,
+          thumbnailUrl: post.thumbnailUrl,
+          thumbnailUrlHd: post.thumbnailUrlHd,
+          videoUrl: post.videoUrl,
+          videoUrlHd: post.videoUrlHd,
+          permalink: post.permalink,
+          likes: post.likes,
+          comments: post.comments,
+          views: post.views,
         },
         resolutions: resolutions.map((r) => ({
           label: r.label,
           locked: r.locked,
-          url: r.locked ? null : r.url,
+          url: r.url,
         })),
       },
-      locked: {
-        lockedUrls: resolutions
-          .filter((r) => r.locked)
-          .map((r) => ({ label: r.label, url: r.url })),
-      },
+      locked: {},
       generatedAt: new Date().toISOString(),
     };
   },
