@@ -4,38 +4,41 @@ import { YouTubeOfficialAdapter } from "./youtube-official";
 import { MockProvider } from "./mock-provider";
 import { RapidAPIInstagramAdapter } from "./rapidapi-instagram";
 import { RapidAPITikTokAdapter } from "./rapidapi-tiktok";
+import { CachedAdapter } from "./cached-adapter";
+import { supabaseService } from "@/core/database/supabase";
 
-// Picks the right adapter per platform.
+// Picks the right adapter per platform and wraps it in the primitive cache.
 //
 // IG/TikTok: if RAPIDAPI_KEY is set, use the real RapidAPI adapter. Each
 // adapter falls back to mock data per-method on any provider error, so a
 // flaky third-party API can't break a scan.
 //
-// YouTube: if YOUTUBE_API_KEY is set, use the official YouTube Data API for
-// profile/posts; everything else (comments, demographics, etc.) inherits from
-// MockProvider.
+// YouTube: always returns the real YouTubeOfficialAdapter — no mock fallback,
+// so a missing YOUTUBE_API_KEY surfaces as a clean error instead of seeded
+// fake data (the bug we already fought once for IG/TT).
 //
-// To swap providers later, change only this file — tools never see the change.
+// EVERY returned adapter is wrapped in CachedAdapter so downstream tools
+// share a primitive cache: two tools scanning the same handle for the same
+// data type pay ONCE. Cache is Supabase-backed, TTL-per-primitive, silently
+// bypassed if the cache table is unreachable.
+//
+// To swap providers later, change only this file — tools never see it.
 
 export function adapterFor(platform: Platform): DataAdapter {
-  // Trim whitespace so a stray newline from copy-paste doesn't disable RapidAPI.
   const hasRapidApi = (process.env.RAPIDAPI_KEY ?? "").trim().length > 0;
 
+  let inner: DataAdapter;
   switch (platform) {
     case "youtube":
-      // Always return the real adapter. If YOUTUBE_API_KEY isn't set, the
-      // adapter's requireKey() throws a DataSourceError on the first real
-      // call — the same honest-error pattern as IG/TikTok. We never want to
-      // silently fall back to MockProvider on YouTube either (that was the
-      // "seeded mock returned as real" bug we already fixed once).
-      return new YouTubeOfficialAdapter();
+      inner = new YouTubeOfficialAdapter();
+      break;
     case "instagram":
-      return hasRapidApi
-        ? new RapidAPIInstagramAdapter()
-        : new MockProvider("instagram");
+      inner = hasRapidApi ? new RapidAPIInstagramAdapter() : new MockProvider("instagram");
+      break;
     case "tiktok":
-      return hasRapidApi
-        ? new RapidAPITikTokAdapter()
-        : new MockProvider("tiktok");
+      inner = hasRapidApi ? new RapidAPITikTokAdapter() : new MockProvider("tiktok");
+      break;
   }
+
+  return new CachedAdapter(inner, supabaseService());
 }
