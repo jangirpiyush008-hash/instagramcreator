@@ -33,6 +33,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <span>DecodeCreator</span>
               </Link>
               <nav className="text-sm flex items-center gap-4">
+                <Link href="/docs" className="text-muted-foreground hover:text-foreground transition-colors hidden sm:inline">
+                  API
+                </Link>
                 <Link href="/login" className="text-muted-foreground hover:text-foreground transition-colors">
                   Sign in
                 </Link>

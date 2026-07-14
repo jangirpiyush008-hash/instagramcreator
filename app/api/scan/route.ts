@@ -1,28 +1,23 @@
 import { NextResponse } from "next/server";
 import { ScanRequestSchema } from "@/core/validation";
-import { getTool } from "@/core/tools/registry";
-import { adapterFor } from "@/core/data/router";
-import { getCachedToolResult, writeCachedToolResult } from "@/core/data/cache";
 import { isEntitled } from "@/core/billing/entitlements";
 import { checkAndIncrementUsage } from "@/core/billing/rate-limit";
 import { blurLocked } from "@/core/tools/teaser";
 import { supabaseService } from "@/core/database/supabase";
-import { recordProfileSnapshot } from "@/core/data/snapshots";
 import { getCurrentUser } from "@/web/lib/supabase-server";
-import { normalizeHandle, scanKey } from "@/core/utils/handle";
+import { scanKey } from "@/core/utils/handle";
 import { regionFromHeaders } from "@/core/utils/region";
 import { hashIp, getClientIp } from "@/core/utils/hash";
-import {
-  DataSourceError,
-  HandleNotFoundError,
-  NotImplementedError,
-  PrivateAccountError,
-  ProviderRateLimitError,
-  RateLimitError,
-} from "@/core/utils/errors";
+import { RateLimitError } from "@/core/utils/errors";
+import { executeScan } from "@/core/scan/executor";
+import { toScanErrorResponse } from "@/core/scan/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Internal web-UI scan endpoint. Uses session-cookie auth (getCurrentUser)
+// and the free-user rate limit. Public API traffic uses /v1/scan/... with
+// x-api-key auth + credit metering. Both share core/scan/executor.
 
 export async function POST(req: Request) {
   let body: unknown;
@@ -40,72 +35,34 @@ export async function POST(req: Request) {
     );
   }
 
-  const { platform, toolId, params } = parsed.data;
-  const handle = normalizeHandle(parsed.data.handle);
-  const tool = getTool(toolId);
-  if (!tool || !tool.platforms.includes(platform)) {
-    return NextResponse.json(
-      { ok: false, error: `Tool ${toolId} not available for ${platform}` },
-      { status: 404 },
-    );
-  }
-
+  const { platform, toolId, params, handle } = parsed.data;
   const user = await getCurrentUser();
   const supa = supabaseService();
   const region = regionFromHeaders(req.headers);
   const key = scanKey(platform, handle, toolId);
-  // Skip cache when the caller passes custom params (e.g. engagement-rate
-  // with a non-default post count). Otherwise a 24-post scan would collide
-  // with the cached 12-post one under the same cache key.
-  const hasParams = params && Object.keys(params).length > 0;
 
   try {
-    // 1) cache lookup — cached hits do NOT count against rate limit
-    let result = hasParams ? null : await getCachedToolResult(supa, platform, handle, toolId);
+    // Rate-limit BEFORE the executor so we don't burn provider budget on a
+    // rejected request. Cache-hit path also checks (cheap either way).
+    const anonKey = user ? null : await hashIp(getClientIp(req.headers));
+    await checkAndIncrementUsage({
+      supabaseService: supa,
+      userId: user?.id ?? null,
+      anonKey,
+    });
 
-    if (!result) {
-      // 2) rate-limit BEFORE we burn data-API budget
-      const anonKey = user ? null : await hashIp(getClientIp(req.headers));
-      await checkAndIncrementUsage({
-        supabaseService: supa,
-        userId: user?.id ?? null,
-        anonKey,
-      });
+    const { result } = await executeScan({ platform, handle, toolId, params });
 
-      // 3) run the tool through its adapter
-      const data = adapterFor(platform);
-      result = await tool.run({ platform, handle, data, params });
-
-      // 3a) write a follower snapshot so live-counter accumulates real history
-      // no matter which tool the visitor scanned. Best-effort.
-      const free = (result as { free?: { followers?: unknown; following?: unknown } }).free ?? {};
-      const followers = typeof free.followers === "number" ? free.followers : undefined;
-      const following = typeof free.following === "number" ? free.following : undefined;
-      if (followers !== undefined) {
-        await recordProfileSnapshot(supa, platform, handle, followers, following);
-      }
-
-      // 4) cache for 48h (best-effort) — only cache default-params runs, so
-      // subsequent default fetches are fast but custom-count runs always
-      // read fresh data.
-      if (!hasParams) {
-        await writeCachedToolResult(supa, platform, handle, toolId, result);
-      }
-    }
-
-    // 5) entitlement gate — return blurred locked values for non-entitled users
-    // DEV: force-unlocked while we build/test the full product. Real gate
-    // returns via `isEntitled(supa, user?.id ?? null, key)` — restore before
-    // going live with payments.
+    // DEV: entitlement gate is force-open while we build. Flip both `void`s
+    // back to real usage before wiring live payments.
     const entitled = true;
     void isEntitled;
     void blurLocked;
-    const responseResult = result;
 
     return NextResponse.json({
       ok: true,
       entitled,
-      result: responseResult,
+      result,
       scanKey: key,
       region,
       isAuthed: !!user,
@@ -121,45 +78,6 @@ export async function POST(req: Request) {
         { status: 429 },
       );
     }
-    if (e instanceof NotImplementedError) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "This platform isn't wired to a live data source yet. YouTube scans are available now; Instagram and TikTok ship in Phase 2.",
-          code: "not_implemented",
-        },
-        { status: 501 },
-      );
-    }
-    if (e instanceof HandleNotFoundError) {
-      return NextResponse.json(
-        { ok: false, error: e.message, code: "not_found" },
-        { status: 404 },
-      );
-    }
-    if (e instanceof ProviderRateLimitError) {
-      return NextResponse.json(
-        { ok: false, error: e.message, code: "provider_rate_limit" },
-        { status: 503 },
-      );
-    }
-    if (e instanceof PrivateAccountError) {
-      return NextResponse.json(
-        { ok: false, error: e.message, code: "private_account" },
-        { status: 422 },
-      );
-    }
-    if (e instanceof DataSourceError) {
-      return NextResponse.json(
-        { ok: false, error: e.message, code: "data_source" },
-        { status: 502 },
-      );
-    }
-    console.error("[api/scan] error", e);
-    return NextResponse.json(
-      { ok: false, error: "Unexpected error" },
-      { status: 500 },
-    );
+    return toScanErrorResponse(e);
   }
 }
