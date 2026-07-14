@@ -1,5 +1,34 @@
 import type { SocialTool } from "../types";
 import { adapterFor } from "../../data/router";
+import { HandleNotFoundError, PrivateAccountError } from "../../utils/errors";
+import type { Platform } from "../../types";
+import type { UsernameAvailability } from "../../data/adapter";
+
+// Per-platform check that translates known errors into meaningful states
+// instead of blowing up the whole scan:
+//   - HandleNotFoundError  → handle is free
+//   - PrivateAccountError  → handle is taken (private account still counts)
+//   - anything else        → mark that platform as "unknown" but keep the
+//                            other platforms visible
+async function checkOne(platform: Platform, handle: string): Promise<
+  UsernameAvailability & { error?: string; isPrivate?: boolean }
+> {
+  try {
+    return await adapterFor(platform).isHandleAvailable(platform, handle);
+  } catch (e) {
+    if (e instanceof HandleNotFoundError) {
+      return { platform, available: true };
+    }
+    if (e instanceof PrivateAccountError) {
+      return { platform, available: false, isPrivate: true };
+    }
+    return {
+      platform,
+      available: false,
+      error: e instanceof Error ? e.message : "check failed",
+    };
+  }
+}
 
 export const usernameChecker: SocialTool = {
   id: "username-checker",
@@ -10,13 +39,15 @@ export const usernameChecker: SocialTool = {
   phase: 0,
   seo: {
     slug: "username-checker",
-    title: "Free Username Checker — Instagram, TikTok Instagram & TikTok YouTube",
+    title: "Free Username Checker — Instagram, TikTok & YouTube",
     description: "Check if a handle is taken across Instagram, TikTok, and YouTube in one search.",
   },
   async run({ handle }) {
-    // Check both platforms regardless of which one the user entered from.
-    const ig = await adapterFor("instagram").isHandleAvailable("instagram", handle);
-    const tt = await adapterFor("tiktok").isHandleAvailable("tiktok", handle);
+    // Run both platforms in parallel so one slow provider doesn't block the other.
+    const [ig, tt] = await Promise.all([
+      checkOne("instagram", handle),
+      checkOne("tiktok", handle),
+    ]);
     const platforms = [
       { ...ig, label: "Instagram" },
       { ...tt, label: "TikTok" },
@@ -29,6 +60,8 @@ export const usernameChecker: SocialTool = {
         platforms: platforms.map((p) => ({
           label: p.label,
           available: p.available,
+          isPrivate: p.isPrivate ?? false,
+          error: p.error,
         })),
         alternatives: [
           `${handle}.official`,
