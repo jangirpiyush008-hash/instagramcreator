@@ -1,4 +1,11 @@
+import Link from "next/link";
 import { LoginForm } from "@/web/components/LoginForm";
+
+export const metadata = {
+  title: "Sign in — DecodeCreator",
+  description:
+    "Sign in to DecodeCreator to unlock the full analytics report for any public Instagram, TikTok, or YouTube account.",
+};
 
 export default async function LoginPage({
   searchParams,
@@ -13,8 +20,14 @@ export default async function LoginPage({
         Magic link to your inbox. We sign you in without a password.
       </p>
       <div className="mt-8">
-        <LoginForm next={next ?? "/account"} />
+        <LoginForm next={next ?? "/account"} mode="signin" />
       </div>
+      <p className="text-xs text-muted-foreground mt-6 text-center">
+        New to DecodeCreator?{" "}
+        <Link href="/signup" className="text-foreground underline hover:text-primary transition">
+          Create an account
+        </Link>
+      </p>
     </section>
   );
 }

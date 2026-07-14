@@ -32,9 +32,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <span className="h-7 w-7 rounded-lg bg-gradient-ig" aria-hidden />
                 <span>DecodeCreator</span>
               </Link>
-              <nav className="text-sm text-muted-foreground flex gap-5">
-                <Link href="/account" className="hover:text-foreground transition-colors">
-                  Account
+              <nav className="text-sm flex items-center gap-4">
+                <Link href="/login" className="text-muted-foreground hover:text-foreground transition-colors">
+                  Sign in
+                </Link>
+                <Link
+                  href="/signup"
+                  className="rounded-full bg-gradient-ig text-white px-4 py-1.5 font-medium hover:brightness-110 transition"
+                >
+                  Sign up
                 </Link>
               </nav>
             </div>

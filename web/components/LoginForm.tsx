@@ -10,7 +10,17 @@ import { supabaseBrowser } from "@/web/lib/supabase-browser";
 // back to Site URL (home page). We keep the URL clean here and let the
 // callback route always send authed users to /account. Deep-link "return to
 // where you came from" can be added later via a cookie.
-export function LoginForm({ next: _next }: { next: string }) {
+//
+// `mode` only changes button/copy — the underlying Supabase flow is identical
+// for signin vs signup (magic-link OR Google auto-creates users on first
+// login and just signs them in on subsequent ones).
+export function LoginForm({
+  next: _next,
+  mode = "signin",
+}: {
+  next: string;
+  mode?: "signin" | "signup";
+}) {
   const [email, setEmail] = useState("");
   const [state, setState] = useState<
     | { kind: "idle" }
@@ -50,11 +60,22 @@ export function LoginForm({ next: _next }: { next: string }) {
   if (state.kind === "sent") {
     return (
       <div className="rounded-lg border border-border p-5 text-sm">
-        Magic link sent to <span className="font-medium">{email}</span>. Open it
-        from the same browser.
+        {mode === "signup" ? "Confirmation link" : "Magic link"} sent to{" "}
+        <span className="font-medium">{email}</span>. Open it from the same
+        browser to finish {mode === "signup" ? "creating your account" : "signing in"}.
       </div>
     );
   }
+
+  const submitLabel =
+    state.kind === "submitting"
+      ? "Sending…"
+      : mode === "signup"
+      ? "Create account with email"
+      : "Send magic link";
+
+  const googleLabel =
+    mode === "signup" ? "Sign up with Google" : "Continue with Google";
 
   return (
     <form onSubmit={submit} className="space-y-4">
@@ -72,7 +93,7 @@ export function LoginForm({ next: _next }: { next: string }) {
         className="w-full"
         disabled={state.kind === "submitting"}
       >
-        {state.kind === "submitting" ? "Sending…" : "Send magic link"}
+        {submitLabel}
       </Button>
       <div className="text-center text-xs text-muted-foreground">or</div>
       <Button
@@ -82,7 +103,7 @@ export function LoginForm({ next: _next }: { next: string }) {
         className="w-full"
         onClick={google}
       >
-        Continue with Google
+        {googleLabel}
       </Button>
       {state.kind === "error" && (
         <p className="text-sm text-destructive" role="alert">
