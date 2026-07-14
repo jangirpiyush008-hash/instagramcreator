@@ -31,7 +31,7 @@ export const genderSplit: SocialTool = {
   phase: 0,
   seo: {
     slug: "audience-demographics",
-    title: "Audience Gender Split — Instagram, TikTok Instagram & TikTok YouTube",
+    title: "Audience Gender Split — Instagram, TikTok & YouTube",
     description:
       "Estimate any public account's audience gender from public follower names.",
   },

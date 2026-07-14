@@ -9,7 +9,7 @@ export const commentPicker: SocialTool = {
   phase: 0,
   seo: {
     slug: "giveaway-comment-picker",
-    title: "Giveaway Comment Picker — Instagram, TikTok Instagram & TikTok YouTube",
+    title: "Giveaway Comment Picker — Instagram, TikTok & YouTube",
     description: "Fair, random winner picker from public post comments.",
   },
   async run({ platform, handle, data }) {

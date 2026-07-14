@@ -51,7 +51,7 @@ export const unfollowerTracker: SocialTool = {
   phase: 0,
   seo: {
     slug: "unfollower-tracker",
-    title: "Follower Churn Tracker — Instagram, TikTok Instagram & TikTok YouTube",
+    title: "Follower Churn Tracker — Instagram, TikTok & YouTube",
     description: "See real follower gain and loss trends across any public account.",
   },
   async run({ platform, handle, data }) {

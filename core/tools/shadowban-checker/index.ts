@@ -30,7 +30,7 @@ export const shadowbanChecker: SocialTool = {
   phase: 0,
   seo: {
     slug: "shadowban-checker",
-    title: "Shadowban Checker — Instagram, TikTok Instagram & TikTok YouTube",
+    title: "Shadowban Checker — Instagram, TikTok & YouTube",
     description: "Public-data check for reach drops and shadowbans.",
   },
   async run({ platform, handle, data }) {

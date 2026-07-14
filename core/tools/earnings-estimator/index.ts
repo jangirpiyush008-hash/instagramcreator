@@ -10,7 +10,7 @@ export const earningsEstimator: SocialTool = {
   phase: 0,
   seo: {
     slug: "earnings-estimator",
-    title: "Creator Earnings Estimator — Instagram, TikTok Instagram & TikTok YouTube",
+    title: "Creator Earnings Estimator — Instagram, TikTok & YouTube",
     description: "Estimate what a public creator account is worth from real engagement.",
   },
   async run({ platform, handle, data }) {

@@ -77,7 +77,7 @@ export const bannedHashtag: SocialTool = {
   phase: 0,
   seo: {
     slug: "banned-hashtag-checker",
-    title: "Banned Hashtag Checker — Instagram, TikTok Instagram & TikTok YouTube",
+    title: "Banned Hashtag Checker — Instagram, TikTok & YouTube",
     description: "Find out if a hashtag is restricted before you post.",
   },
   async run({ platform, handle }) {

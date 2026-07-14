@@ -48,13 +48,17 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="container py-12">
+      <section className="container py-12" id="tools">
         <div className="text-center mb-8">
-          <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight">
-            11 tools, one paywall — for Instagram + TikTok
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1 text-xs uppercase tracking-wider text-muted-foreground mb-4">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+            {TOOL_META.length} tools · Instagram · TikTok · YouTube
+          </div>
+          <h2 className="text-2xl sm:text-4xl font-semibold tracking-tight">
+            Every creator insight, one search
           </h2>
-          <p className="text-muted-foreground mt-2">
-            Pick the question. We'll show the answer.
+          <p className="text-muted-foreground mt-3 max-w-xl mx-auto">
+            Real public data — engagement, growth, audience, downloads. No signup to try.
           </p>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-5xl mx-auto">

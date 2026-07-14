@@ -23,7 +23,7 @@ export const fakeFollower: SocialTool = {
   phase: 0,
   seo: {
     slug: "real-follower-check",
-    title: "Real Follower Check — Instagram, TikTok Instagram & TikTok YouTube",
+    title: "Real Follower Check — Instagram, TikTok & YouTube",
     description: "See how real an account's audience is from public engagement signals.",
   },
   async run({ platform, handle, data }) {

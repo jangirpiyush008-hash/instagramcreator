@@ -24,7 +24,7 @@ export const liveCounter: SocialTool = {
   phase: 0,
   seo: {
     slug: "live-follower-counter",
-    title: "Live Follower Counter — Instagram, TikTok Instagram & TikTok YouTube",
+    title: "Live Follower Counter — Instagram, TikTok & YouTube",
     description: "Track any public account's follower growth in real time.",
   },
   async run({ platform, handle, data }) {

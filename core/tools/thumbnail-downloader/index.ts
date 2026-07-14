@@ -9,7 +9,7 @@ export const thumbnailDownloader: SocialTool = {
   phase: 0,
   seo: {
     slug: "thumbnail-downloader",
-    title: "Free Thumbnail Downloader — Instagram, TikTok Instagram & TikTok YouTube",
+    title: "Free Thumbnail Downloader — Instagram, TikTok & YouTube",
     description: "Download high-res thumbnails and cover images from any public post.",
   },
   async run({ platform, handle, data }) {
