@@ -117,12 +117,18 @@ export default async function AccountPage({
 
       <AccountDashboard
         initialTab={tab ?? "overview"}
-        stats={{
-          scans: usageRows?.length ?? 0,
+        consumer={{
+          planLabel: activeSub?.plan ?? "Free",
+          activeSub: !!activeSub,
+          reportsUnlocked: unlocks?.length ?? 0,
+        }}
+        developer={{
+          apiCalls: usageRows?.length ?? 0,
           creditsRemaining: primaryKey?.credits_remaining ?? 0,
           creditsIncluded: primaryKey?.credits_included ?? tierInfo.credits,
           watchlistCount: watchlist?.length ?? 0,
-          activeSub: !!activeSub,
+          hasKey: !!primaryKey,
+          tierName: tierInfo.name,
         }}
         subscription={
           activeSub
@@ -150,7 +156,6 @@ export default async function AccountPage({
         }
         usage={usageRows ?? []}
         watchlist={watchlist ?? []}
-        tierName={tierInfo.name}
       />
     </section>
   );

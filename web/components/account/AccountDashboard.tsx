@@ -50,27 +50,32 @@ interface UnlockRow {
 
 interface Props {
   initialTab: string;
-  stats: {
-    scans: number;
+  consumer: {
+    planLabel: string;
+    activeSub: boolean;
+    reportsUnlocked: number;
+  };
+  developer: {
+    apiCalls: number;
     creditsRemaining: number;
     creditsIncluded: number;
     watchlistCount: number;
-    activeSub: boolean;
+    hasKey: boolean;
+    tierName: string;
   };
   subscription: Subscription | null;
   unlocks: UnlockRow[];
   apiKeys: ApiKeyRow[];
   usage: UsageRow[];
   watchlist: WatchlistRow[];
-  tierName: string;
 }
 
 const TABS = [
   { id: "overview", label: "Overview" },
+  { id: "subscription", label: "Subscription" },
   { id: "api-keys", label: "API Keys" },
-  { id: "usage", label: "Usage" },
+  { id: "usage", label: "API Usage" },
   { id: "watchlist", label: "Watchlist" },
-  { id: "billing", label: "Billing" },
   { id: "docs", label: "Docs" },
 ] as const;
 
@@ -93,8 +98,6 @@ export function AccountDashboard(props: Props) {
         alert(j.error ?? "Failed to create key");
         return;
       }
-      // Show the raw key once (via query string). Server-rendered page
-      // reads ?newKey= and displays it with the "copy now" panel.
       router.push(`/account?tab=api-keys&newKey=${encodeURIComponent(j.raw)}`);
       router.refresh();
     } finally {
@@ -140,7 +143,15 @@ export function AccountDashboard(props: Props) {
         })}
       </nav>
 
-      {tab === "overview" && <OverviewTab {...props} />}
+      {tab === "overview" && <OverviewTab consumer={props.consumer} developer={props.developer} />}
+      {tab === "subscription" && (
+        <SubscriptionTab
+          subscription={props.subscription}
+          unlocks={props.unlocks}
+          activeSub={props.consumer.activeSub}
+          planLabel={props.consumer.planLabel}
+        />
+      )}
       {tab === "api-keys" && (
         <ApiKeysTab
           keys={props.apiKeys}
@@ -153,29 +164,140 @@ export function AccountDashboard(props: Props) {
       )}
       {tab === "usage" && <UsageTab rows={props.usage} />}
       {tab === "watchlist" && <WatchlistTab rows={props.watchlist} />}
-      {tab === "billing" && (
-        <BillingTab subscription={props.subscription} unlocks={props.unlocks} tierName={props.tierName} />
-      )}
       {tab === "docs" && <DocsTab />}
     </div>
   );
 }
 
-function OverviewTab({ stats, tierName }: Pick<Props, "stats" | "tierName">) {
-  const pct = stats.creditsIncluded > 0
-    ? Math.min(100, Math.max(0, (stats.creditsRemaining / stats.creditsIncluded) * 100))
-    : 0;
+function OverviewTab({
+  consumer,
+  developer,
+}: {
+  consumer: Props["consumer"];
+  developer: Props["developer"];
+}) {
+  const pct =
+    developer.creditsIncluded > 0
+      ? Math.min(
+          100,
+          Math.max(0, (developer.creditsRemaining / developer.creditsIncluded) * 100),
+        )
+      : 0;
+  const lowCredits = developer.hasKey && pct < 20;
   return (
-    <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-      <StatCard label="Current plan" value={tierName} sub={stats.activeSub ? "Active" : "Free tier"} />
-      <StatCard
-        label="Credits remaining"
-        value={stats.creditsRemaining.toLocaleString()}
-        sub={`of ${stats.creditsIncluded.toLocaleString()} this month`}
-        progress={pct}
-      />
-      <StatCard label="Recent scans" value={stats.scans} sub="last 50 API calls" />
-      <StatCard label="Watched accounts" value={stats.watchlistCount} sub="on your API watchlist" />
+    <div className="space-y-8">
+      {/* CONSUMER ZONE */}
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="h-6 w-1 rounded-full bg-gradient-ig" />
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wider">Your account</h2>
+            <p className="text-xs text-muted-foreground">
+              Using DecodeCreator through the web app
+            </p>
+          </div>
+        </div>
+        <div className="grid sm:grid-cols-3 gap-3">
+          <StatCard
+            label="Current plan"
+            value={consumer.planLabel}
+            sub={consumer.activeSub ? "Active subscription" : "No active subscription"}
+          />
+          <StatCard
+            label="Reports unlocked"
+            value={consumer.reportsUnlocked}
+            sub="one-time paid unlocks"
+          />
+          <div className="rounded-xl border border-border bg-card/60 p-4 flex flex-col justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                Grow your usage
+              </div>
+              <div className="text-sm mt-1">
+                {consumer.activeSub
+                  ? "You're on a paid plan — thank you."
+                  : "Unlock every tool with a Creator plan."}
+              </div>
+            </div>
+            {!consumer.activeSub && (
+              <Link
+                href="/pricing"
+                className="mt-3 inline-block rounded-md bg-gradient-ig text-white px-3 py-1.5 text-xs font-medium hover:brightness-110 transition text-center"
+              >
+                See plans →
+              </Link>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* DEVELOPER ZONE */}
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="h-6 w-1 rounded-full bg-emerald-400" />
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wider">Developer API</h2>
+            <p className="text-xs text-muted-foreground">
+              Programmatic access — one endpoint per tool, per-credit pricing
+            </p>
+          </div>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatCard
+            label="API tier"
+            value={developer.tierName}
+            sub={developer.hasKey ? "Active key" : "No key yet"}
+          />
+          <StatCard
+            label="Credits remaining"
+            value={developer.creditsRemaining.toLocaleString()}
+            sub={`of ${developer.creditsIncluded.toLocaleString()} this month`}
+            progress={pct}
+          />
+          <StatCard
+            label="API calls"
+            value={developer.apiCalls}
+            sub="last 50 recorded"
+          />
+          <StatCard
+            label="Watchlist"
+            value={developer.watchlistCount}
+            sub="accounts monitored"
+          />
+        </div>
+        {!developer.hasKey && (
+          <div className="rounded-xl border border-border bg-card/60 p-4 flex flex-wrap items-center gap-3 justify-between">
+            <div className="text-sm">
+              <div className="font-medium">You don&apos;t have an API key yet.</div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                Generate one in the API Keys tab — takes 5 seconds, no card required.
+              </div>
+            </div>
+            <Link
+              href="/account?tab=api-keys"
+              className="rounded-md bg-gradient-ig text-white px-3 py-1.5 text-xs font-medium hover:brightness-110 transition"
+            >
+              Generate key →
+            </Link>
+          </div>
+        )}
+        {lowCredits && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 flex flex-wrap items-center gap-3 justify-between">
+            <div className="text-sm">
+              <div className="font-medium text-amber-200">Credits running low</div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                You&apos;ve used {Math.round(100 - pct)}% of this month&apos;s credits.
+              </div>
+            </div>
+            <Link
+              href="/docs#pricing"
+              className="rounded-md border border-amber-400/40 text-amber-100 px-3 py-1.5 text-xs font-medium hover:bg-amber-500/10 transition"
+            >
+              Upgrade tier →
+            </Link>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -202,6 +324,89 @@ function StatCard({
             className="h-full rounded-full bg-gradient-ig transition-all"
             style={{ width: `${progress}%` }}
           />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SubscriptionTab({
+  subscription,
+  unlocks,
+  activeSub,
+  planLabel,
+}: {
+  subscription: Subscription | null;
+  unlocks: UnlockRow[];
+  activeSub: boolean;
+  planLabel: string;
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="rounded-xl border border-border bg-card/60 p-5">
+        <h3 className="font-medium mb-2">Subscription</h3>
+        {subscription ? (
+          <div className="space-y-1 text-sm">
+            <p>
+              <span className="text-muted-foreground">Plan:</span>{" "}
+              <span className="font-medium">{subscription.plan}</span>
+            </p>
+            <p>
+              <span className="text-muted-foreground">Status:</span> {subscription.status}
+            </p>
+            {subscription.renewsAt && (
+              <p>
+                <span className="text-muted-foreground">Renews:</span>{" "}
+                {new Date(subscription.renewsAt).toLocaleDateString()}
+              </p>
+            )}
+            <p className="text-muted-foreground text-xs pt-2">
+              Manage billing in your {subscription.provider} portal.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              You&apos;re on <span className="text-foreground font-medium">{planLabel}</span>.
+              Upgrade to unlock every tool, remove teasers, and get priority support.
+            </p>
+            <Link
+              href="/pricing"
+              className="inline-block rounded-md bg-gradient-ig text-white px-4 py-2 text-sm font-medium hover:brightness-110 transition"
+            >
+              See plans →
+            </Link>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-border bg-card/60 p-5">
+        <h3 className="font-medium mb-2">One-time unlocks</h3>
+        {unlocks.length > 0 ? (
+          <ul className="divide-y divide-border text-sm">
+            {unlocks.map((u) => (
+              <li key={u.id} className="py-3 flex justify-between gap-4">
+                <span className="truncate">{u.scan_key}</span>
+                <span className="text-muted-foreground text-xs whitespace-nowrap">
+                  {new Date(u.created_at).toLocaleDateString()}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No one-time unlocks yet. When you pay to unlock a specific report, it shows up here.
+          </p>
+        )}
+      </div>
+
+      {!activeSub && (
+        <div className="rounded-xl border border-border bg-card/40 p-5 text-xs text-muted-foreground">
+          <span className="text-foreground font-medium">Looking for API billing?</span> The
+          Developer API has its own tiers and billing — see the{" "}
+          <Link href="/account?tab=api-keys" className="underline">API Keys</Link> and{" "}
+          <Link href="/docs" className="underline">Docs</Link> tabs. Web-app subscriptions and API
+          subscriptions are billed separately.
         </div>
       )}
     </div>
@@ -389,69 +594,6 @@ function WatchlistTab({ rows }: { rows: WatchlistRow[] }) {
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-function BillingTab({
-  subscription,
-  unlocks,
-  tierName,
-}: {
-  subscription: Subscription | null;
-  unlocks: UnlockRow[];
-  tierName: string;
-}) {
-  return (
-    <div className="space-y-6">
-      <div className="rounded-xl border border-border bg-card/60 p-5">
-        <h3 className="font-medium mb-2">Subscription</h3>
-        {subscription ? (
-          <div className="space-y-1 text-sm">
-            <p>
-              <span className="text-muted-foreground">Plan:</span>{" "}
-              <span className="font-medium">{subscription.plan}</span>
-            </p>
-            <p>
-              <span className="text-muted-foreground">Status:</span> {subscription.status}
-            </p>
-            {subscription.renewsAt && (
-              <p>
-                <span className="text-muted-foreground">Renews:</span>{" "}
-                {new Date(subscription.renewsAt).toLocaleDateString()}
-              </p>
-            )}
-            <p className="text-muted-foreground text-xs pt-2">
-              Manage billing in your {subscription.provider} portal.
-            </p>
-          </div>
-        ) : (
-          <div className="text-sm">
-            <p className="text-muted-foreground">
-              Currently on <span className="text-foreground font-medium">{tierName}</span>. Upgrade
-              coming soon — we&apos;ll notify you when Razorpay / LemonSqueezy checkout is live.
-            </p>
-          </div>
-        )}
-      </div>
-
-      <div className="rounded-xl border border-border bg-card/60 p-5">
-        <h3 className="font-medium mb-2">Recent unlocks</h3>
-        {unlocks.length > 0 ? (
-          <ul className="divide-y divide-border text-sm">
-            {unlocks.map((u) => (
-              <li key={u.id} className="py-3 flex justify-between gap-4">
-                <span className="truncate">{u.scan_key}</span>
-                <span className="text-muted-foreground text-xs whitespace-nowrap">
-                  {new Date(u.created_at).toLocaleDateString()}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted-foreground">No one-time unlocks yet.</p>
-        )}
-      </div>
     </div>
   );
 }
