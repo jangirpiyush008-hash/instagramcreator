@@ -59,7 +59,7 @@ export default function HomePage() {
           </div>
           <div className="flex flex-wrap gap-3 justify-center mt-6">
             <Link
-              href="/signup"
+              href="?auth=signup"
               className="inline-flex items-center gap-2 rounded-full bg-gradient-ig text-white px-6 py-3 text-sm font-medium hover:brightness-110 transition shadow-lg shadow-primary/20"
             >
               Start Free Trial <span aria-hidden>→</span>

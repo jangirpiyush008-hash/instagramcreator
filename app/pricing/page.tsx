@@ -78,7 +78,7 @@ export default function PricingPage() {
               <div className="mt-6">
                 {tier.id === "free" ? (
                   <Link
-                    href="/signup"
+                    href="?auth=signup"
                     className="block w-full text-center rounded-md border border-border bg-card/80 py-2.5 text-sm font-medium hover:border-primary/50 transition"
                   >
                     {tier.ctaLabel}

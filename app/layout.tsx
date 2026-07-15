@@ -1,7 +1,9 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import { ThemeToggle } from "@/web/components/ThemeToggle";
+import { AuthModal } from "@/web/components/AuthModal";
 
 export const metadata: Metadata = {
   title: "DecodeCreator — audience analytics for any public Instagram, TikTok or YouTube account",
@@ -64,11 +66,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Link href="/docs" className="text-muted-foreground hover:text-foreground transition-colors hidden sm:inline">
                   API
                 </Link>
-                <Link href="/login" className="text-muted-foreground hover:text-foreground transition-colors">
+                {/*
+                  Auth links use ?auth=… so any page can open the modal
+                  without navigating. AuthModal (rendered at the bottom of
+                  <body>) picks up the param and renders. /login and /signup
+                  URLs still work as fallbacks for direct visits or emails.
+                */}
+                <Link href="?auth=signin" className="text-muted-foreground hover:text-foreground transition-colors">
                   Sign in
                 </Link>
                 <Link
-                  href="/signup"
+                  href="?auth=signup"
                   className="rounded-full bg-gradient-ig text-white px-4 py-1.5 font-medium hover:brightness-110 transition"
                 >
                   Start Trial
@@ -90,6 +98,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </footer>
         </div>
+        {/*
+          Auth modal is mounted once globally — controlled by ?auth=signin /
+          ?auth=signup in the URL. Wrapping in Suspense because AuthModal
+          uses useSearchParams which suspends during SSR bailouts.
+        */}
+        <Suspense fallback={null}>
+          <AuthModal />
+        </Suspense>
       </body>
     </html>
   );

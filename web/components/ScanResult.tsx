@@ -243,7 +243,7 @@ function LiveScan({
               See plans
             </Link>
             <Link
-              href="/signup"
+              href="?auth=signup"
               className="rounded-md border border-border bg-card/60 px-4 py-2 text-sm hover:border-primary/50 transition"
             >
               Sign up free
@@ -357,7 +357,7 @@ function UsageBanner({ usage, isAuthed }: { usage: UsageInfo; isAuthed: boolean 
       </div>
       {isAnon && !isAuthed && (
         <Link
-          href="/signup"
+          href="?auth=signup"
           className="rounded-md bg-gradient-ig text-white px-3 py-1.5 text-xs font-medium hover:brightness-110 transition whitespace-nowrap"
         >
           Sign up · 20 free scans/mo

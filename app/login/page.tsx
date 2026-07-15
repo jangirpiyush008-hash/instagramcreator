@@ -1,5 +1,9 @@
-import Link from "next/link";
-import { LoginForm } from "@/web/components/LoginForm";
+import { redirect } from "next/navigation";
+
+// Kept as a real route so old bookmarks / marketing emails still work,
+// but the actual auth UX lives in the global AuthModal (see
+// web/components/AuthModal.tsx). We just bounce to `/?auth=signin`
+// which opens the same modal.
 
 export const metadata = {
   title: "Sign in — DecodeCreator",
@@ -13,21 +17,6 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const { next } = await searchParams;
-  return (
-    <section className="container py-16 max-w-md">
-      <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
-      <p className="text-muted-foreground text-sm mt-1">
-        Magic link to your inbox. We sign you in without a password.
-      </p>
-      <div className="mt-8">
-        <LoginForm next={next ?? "/account"} mode="signin" />
-      </div>
-      <p className="text-xs text-muted-foreground mt-6 text-center">
-        New to DecodeCreator?{" "}
-        <Link href="/signup" className="text-foreground underline hover:text-primary transition">
-          Create an account
-        </Link>
-      </p>
-    </section>
-  );
+  const nextParam = next ? `&next=${encodeURIComponent(next)}` : "";
+  redirect(`/?auth=signin${nextParam}`);
 }
