@@ -1,4 +1,31 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { CONSUMER_TIERS, tierById, type ConsumerTier } from "./tiers";
+
+// Look up which consumer tier the user is on right now.
+// Anonymous users → free (they'll hit the anon 5-per-day cap before the
+// free-plan monthly cap). Signed-in without active sub → free tier.
+// Active sub → the plan string in the subscriptions row (starter/pro/scale).
+export async function getUserTier(
+  supabaseService: SupabaseClient,
+  userId: string | null,
+): Promise<ConsumerTier> {
+  if (!userId) return CONSUMER_TIERS.free!;
+  try {
+    const { data } = await supabaseService
+      .from("subscriptions")
+      .select("plan, status, current_period_end")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .gt("current_period_end", new Date().toISOString())
+      .order("current_period_end", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return tierById(data?.plan);
+  } catch (e) {
+    console.warn("[entitlements] tier lookup failed, defaulting to free:", e instanceof Error ? e.message : e);
+    return CONSUMER_TIERS.free!;
+  }
+}
 
 // True if user has an active subscription whose current_period_end is in the future,
 // OR a one-time unlock matching this scanKey.

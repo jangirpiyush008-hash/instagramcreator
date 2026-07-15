@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { Platform, Region } from "@/core/types";
 import type { ToolResult, SocialTool } from "@/core/tools/types";
@@ -8,6 +9,14 @@ import { getView } from "./tools/registry";
 import { PreviewBanner } from "./tools/primitives";
 import { Paywall } from "./Paywall";
 
+interface UsageInfo {
+  tier: string;
+  limit: number;
+  used: number;
+  window: "day" | "month";
+  remaining: number;
+}
+
 interface ScanResponse {
   ok: true;
   entitled: boolean;
@@ -15,12 +24,15 @@ interface ScanResponse {
   scanKey: string;
   region: Region;
   isAuthed: boolean;
+  usage?: UsageInfo;
 }
 
 interface ScanError {
   ok: false;
   error: string;
   code?: string;
+  isAuthed?: boolean;
+  currentTier?: string;
 }
 
 export function ScanResult({
@@ -169,6 +181,77 @@ function LiveScan({
         </div>
       );
     }
+    // Anonymous user hit a signed-in-only tool. Show a friendly sign-in gate,
+    // not the generic error card.
+    if (state.code === "auth_required") {
+      return (
+        <div className="rounded-2xl border border-primary/30 bg-primary/5 p-8 text-center space-y-3">
+          <div className="text-4xl">🔐</div>
+          <h3 className="text-xl font-semibold">Sign in to use this tool</h3>
+          <p className="text-muted-foreground max-w-md mx-auto">
+            This tool is available to signed-in users. Sign up free — 20 scans a month, no card required.
+          </p>
+          <div className="flex gap-2 justify-center pt-2">
+            <Link
+              href={`/signup?next=${encodeURIComponent(typeof window !== "undefined" ? window.location.pathname + window.location.search : "/")}`}
+              className="rounded-md bg-gradient-ig text-white px-4 py-2 text-sm font-medium hover:brightness-110 transition"
+            >
+              Sign up free
+            </Link>
+            <Link
+              href="/pricing"
+              className="rounded-md border border-border bg-card/60 px-4 py-2 text-sm hover:border-primary/50 transition"
+            >
+              See plans
+            </Link>
+          </div>
+        </div>
+      );
+    }
+    // Paid user on a plan that doesn't include this tool.
+    if (state.code === "upgrade_required") {
+      return (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-8 text-center space-y-3">
+          <div className="text-4xl">✨</div>
+          <h3 className="text-xl font-semibold">Upgrade to unlock this tool</h3>
+          <p className="text-muted-foreground max-w-md mx-auto">
+            {state.message}
+          </p>
+          <Link
+            href="/pricing"
+            className="inline-block rounded-md bg-gradient-ig text-white px-4 py-2 text-sm font-medium hover:brightness-110 transition"
+          >
+            See plans →
+          </Link>
+        </div>
+      );
+    }
+    // Hit the daily/monthly cap. Different copy for anon vs signed-in.
+    if (state.code === "rate_limit") {
+      return (
+        <div className="rounded-2xl border border-primary/30 bg-primary/5 p-8 text-center space-y-3">
+          <div className="text-4xl">⏱️</div>
+          <h3 className="text-xl font-semibold">You&apos;ve hit your scan limit</h3>
+          <p className="text-muted-foreground max-w-md mx-auto">
+            {state.message}
+          </p>
+          <div className="flex gap-2 justify-center pt-2">
+            <Link
+              href="/pricing"
+              className="rounded-md bg-gradient-ig text-white px-4 py-2 text-sm font-medium hover:brightness-110 transition"
+            >
+              See plans
+            </Link>
+            <Link
+              href="/signup"
+              className="rounded-md border border-border bg-card/60 px-4 py-2 text-sm hover:border-primary/50 transition"
+            >
+              Sign up free
+            </Link>
+          </div>
+        </div>
+      );
+    }
     // Account not found — the provider returned a different profile than
     // requested (fuzzy-match fallback), so we refused rather than show
     // wrong-account data.
@@ -212,6 +295,7 @@ function LiveScan({
   const { payload } = state;
   return (
     <div className="space-y-8">
+      {payload.usage && <UsageBanner usage={payload.usage} isAuthed={payload.isAuthed} />}
       {View ? (
         <View
           platform={platform}
@@ -235,6 +319,58 @@ function LiveScan({
         Generated {new Date(payload.result.generatedAt).toLocaleString()} · Public
         data only — the account is never notified.
       </p>
+    </div>
+  );
+}
+
+// Slim strip showing "X of Y scans used". Only rendered on tiers where
+// the counter is meaningful (anon + free). Paid tiers have generous
+// monthly caps, so we don't clutter their result view.
+function UsageBanner({ usage, isAuthed }: { usage: UsageInfo; isAuthed: boolean }) {
+  if (usage.tier !== "anon" && usage.tier !== "free") return null;
+  const pct = usage.limit > 0 ? Math.min(100, Math.round((usage.used / usage.limit) * 100)) : 0;
+  const isLast = usage.remaining <= 1;
+  const isAnon = usage.tier === "anon";
+
+  return (
+    <div
+      className={
+        "rounded-xl border p-3 flex items-center gap-4 flex-wrap text-sm " +
+        (isLast
+          ? "border-amber-500/40 bg-amber-500/10"
+          : "border-border bg-card/60")
+      }
+    >
+      <div className="flex-1 min-w-[200px]">
+        <div className="font-medium">
+          {usage.used} of {usage.limit} {isAnon ? "free scans today" : "scans this month"}
+        </div>
+        <div className="mt-1 h-1.5 rounded-full bg-border/60 overflow-hidden">
+          <div
+            className={
+              "h-full rounded-full transition-all " +
+              (isLast ? "bg-amber-400" : "bg-gradient-ig")
+            }
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+      {isAnon && !isAuthed && (
+        <Link
+          href="/signup"
+          className="rounded-md bg-gradient-ig text-white px-3 py-1.5 text-xs font-medium hover:brightness-110 transition whitespace-nowrap"
+        >
+          Sign up · 20 free scans/mo
+        </Link>
+      )}
+      {!isAnon && (
+        <Link
+          href="/pricing"
+          className="rounded-md border border-primary/40 bg-primary/10 text-primary px-3 py-1.5 text-xs font-medium hover:bg-primary/20 transition whitespace-nowrap"
+        >
+          Upgrade for more →
+        </Link>
+      )}
     </div>
   );
 }

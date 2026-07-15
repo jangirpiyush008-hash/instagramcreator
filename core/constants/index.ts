@@ -15,10 +15,13 @@ export const PRICING = {
   },
 } as const;
 
+// Legacy — kept as a fallback for code paths that still import it, but
+// authoritative limits now live in core/billing/tiers.ts (CONSUMER_TIERS,
+// ANON_LIMITS). New code should read from there, not this constant.
 export const PLAN_LIMITS = {
-  anon: 3,         // 3 scans / day / IP hash
-  free: 5,         // 5 scans / day / authed user
-  subscriber: 100, // 100 scans / day / subscriber
+  anon: 5,
+  free: 20,
+  subscriber: 150,
 } as const;
 
 export const CACHE_TTL_HOURS = 48;
