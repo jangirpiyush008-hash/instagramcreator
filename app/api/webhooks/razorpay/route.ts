@@ -40,12 +40,18 @@ export async function POST(req: Request) {
     });
   } else if (event.type === "subscription.active") {
     const data = event.data as { subId?: string; current_period_end?: string | null };
+    // Store the plan string as-is when it's a known consumer tier so
+    // getUserTier() can map straight back without a translation layer.
+    // Legacy 'annual' stays 'annual'; everything else defaults to 'starter'
+    // (the lowest paid tier) so an unexpected string never grants Pro/Scale.
+    const knownTiers = new Set(["starter", "pro", "scale", "annual"]);
+    const plan = event.plan && knownTiers.has(event.plan) ? event.plan : "starter";
     await supa.from("subscriptions").upsert(
       {
         user_id: event.userId,
         provider: "razorpay",
         provider_sub_id: data.subId ?? null,
-        plan: event.plan === "annual" ? "annual" : "monthly",
+        plan,
         status: "active",
         current_period_end: data.current_period_end ?? null,
       },

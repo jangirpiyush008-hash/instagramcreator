@@ -20,9 +20,15 @@ export const ScanRequestSchema = z.object({
 
 export const PlanSchema = z.enum(["monthly", "annual", "one_time"]);
 export const RegionSchema = z.enum(["IN", "GLOBAL"]);
+// Consumer tier plans purchasable via /checkout. Free tier is not
+// purchasable — signing up creates a "free" user implicitly.
+export const TierSchema = z.enum(["starter", "pro", "scale"]);
 
 export const CheckoutRequestSchema = z.object({
-  plan: PlanSchema,
+  // Either 'plan' (legacy: monthly / annual / one_time) OR 'tier'
+  // (new: starter / pro / scale). Route accepts both during rollout.
+  plan: PlanSchema.optional(),
+  tier: TierSchema.optional(),
   scanKey: z.string().min(1).optional(),
 });
 

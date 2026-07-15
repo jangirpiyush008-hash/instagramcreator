@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { PRICING } from "../constants";
+import { CONSUMER_TIERS, type ConsumerTier } from "../billing/tiers";
 import { PaymentError } from "../utils/errors";
 import type { Plan } from "../types";
 import type { CheckoutSession, PaymentProvider, VerifiedWebhookEvent } from "./provider";
@@ -61,12 +62,15 @@ export class RazorpayProvider implements PaymentProvider {
       return { url, provider: this.name, reference: order.id };
     }
 
-    // monthly / annual — uses Razorpay Subscriptions
-    const planId =
-      plan === "monthly"
-        ? process.env.RAZORPAY_PLAN_MONTHLY
-        : process.env.RAZORPAY_PLAN_ANNUAL;
-    if (!planId) throw new PaymentError(`Razorpay plan id missing for ${plan}`);
+    // Subscription plans — map plan token → Razorpay plan id.
+    // Consumer tiers (starter / pro / scale) look up their env var from
+    // CONSUMER_TIERS; legacy monthly / annual fall back to the original vars.
+    const planId = resolveRazorpayPlanId(plan);
+    if (!planId) {
+      throw new PaymentError(
+        `Razorpay plan id missing for '${plan}'. Set the env var and restart.`,
+      );
+    }
 
     const res = await fetch(`${RZP_API}/subscriptions`, {
       method: "POST",
@@ -76,7 +80,9 @@ export class RazorpayProvider implements PaymentProvider {
       },
       body: JSON.stringify({
         plan_id: planId,
-        total_count: plan === "monthly" ? 12 : 1,
+        // 12 monthly renewals by default, then the customer resubs.
+        // Legacy "annual" (yearly plan) only bills once, so total_count=1.
+        total_count: plan === "annual" ? 1 : 12,
         notes: { userId, kind: "subscription", plan },
       }),
     });
@@ -152,6 +158,17 @@ export class RazorpayProvider implements PaymentProvider {
       data: { ignored: evt.event },
     };
   }
+}
+
+// Resolves the Razorpay plan_id for a given Plan token, reading from env
+// so plan ids can rotate without a code deploy. Consumer tiers pull the
+// env var name from tiers.ts; legacy plans fall back to the original vars.
+function resolveRazorpayPlanId(plan: Plan): string | undefined {
+  if (plan === "monthly") return process.env.RAZORPAY_PLAN_MONTHLY;
+  if (plan === "annual") return process.env.RAZORPAY_PLAN_ANNUAL;
+  const tier = CONSUMER_TIERS[plan] as ConsumerTier | undefined;
+  if (tier?.razorpayPlanEnv) return process.env[tier.razorpayPlanEnv];
+  return undefined;
 }
 
 // Helper for the client-side Razorpay checkout button.

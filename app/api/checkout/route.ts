@@ -4,9 +4,16 @@ import { providerForRegion } from "@/core/payments/router";
 import { regionFromHeaders } from "@/core/utils/region";
 import { getCurrentUser } from "@/web/lib/supabase-server";
 import { PaymentError } from "@/core/utils/errors";
+import type { Plan } from "@/core/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Body shape (dual):
+//   { tier: 'starter' | 'pro' | 'scale' }  ← new consumer flow
+//   { plan: 'monthly' | 'annual' | 'one_time', scanKey? } ← legacy flow
+// Both funnel into a Plan token that the provider adapter routes to a
+// Razorpay plan_id (from env). The response is a hosted-checkout URL.
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
@@ -31,6 +38,15 @@ export async function POST(req: Request) {
     );
   }
 
+  // Prefer 'tier' when set (new flow), else fall back to 'plan' (legacy).
+  const plan: Plan | undefined = parsed.data.tier ?? parsed.data.plan;
+  if (!plan) {
+    return NextResponse.json(
+      { ok: false, error: "Missing 'tier' or 'plan' in request body" },
+      { status: 400 },
+    );
+  }
+
   const region = regionFromHeaders(req.headers);
   const provider = providerForRegion(region);
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? new URL(req.url).origin;
@@ -38,7 +54,7 @@ export async function POST(req: Request) {
   try {
     const session = await provider.createCheckout({
       userId: user.id,
-      plan: parsed.data.plan,
+      plan,
       scanKey: parsed.data.scanKey,
       region,
       successUrl: `${siteUrl}/account?status=success`,
