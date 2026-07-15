@@ -51,6 +51,10 @@ interface YtCommentThread {
       id?: string;
       snippet?: {
         authorDisplayName?: string;
+        // YouTube always returns the commenter's profile photo URL inline.
+        // We surface it via CommentItem.avatarUrl so audience-enrichment
+        // can feed it directly to face-analyzer without a follow-up API call.
+        authorProfileImageUrl?: string;
         authorChannelUrl?: string;
         textDisplay?: string;
         textOriginal?: string;
@@ -223,6 +227,11 @@ export class YouTubeOfficialAdapter extends MockProvider {
         username: s?.authorDisplayName ?? "unknown",
         text: s?.textOriginal ?? s?.textDisplay ?? "",
         postedAt: s?.publishedAt ?? new Date().toISOString(),
+        // On YT, authorDisplayName IS the human name (channel name), so
+        // treat it as both username and full name for the name-dictionary
+        // classifier. authorProfileImageUrl is public.
+        fullName: s?.authorDisplayName,
+        avatarUrl: s?.authorProfileImageUrl,
       };
     });
     return { post, comments };

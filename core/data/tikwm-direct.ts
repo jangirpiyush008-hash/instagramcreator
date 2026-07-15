@@ -78,10 +78,18 @@ interface VideoListData {
   itemList?: RawVideo[];
 }
 
+// tikwm's comment response includes inline commenter avatar + nickname.
+// We surface these on CommentItem so audience-enrichment can skip a
+// separate getProfile call per commenter (faster + higher hit rate).
 interface CommentsData {
   comments?: {
     cid?: string;
-    user?: { unique_id?: string };
+    user?: {
+      unique_id?: string;
+      nickname?: string;
+      avatar?: string;
+      avatar_larger?: string;
+    };
     text?: string;
     create_time?: number;
   }[];
@@ -264,6 +272,8 @@ export class TikwmDirectAdapter extends MockProvider {
           username: c.user?.unique_id ?? "unknown",
           text: c.text ?? "",
           postedAt: c.create_time ? new Date(c.create_time * 1000).toISOString() : new Date().toISOString(),
+          fullName: c.user?.nickname,
+          avatarUrl: c.user?.avatar_larger ?? c.user?.avatar,
         }));
         const totalComments = data.total ?? post.comments;
         return {

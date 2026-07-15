@@ -11,10 +11,13 @@
 //
 // Cost control:
 //   • Sample cap of 25 profiles per scan (configurable per tool).
+//   • Prefer INLINE commenter data (avatar, full name) that the comment
+//     API returns for free. Only call getProfile as a fallback when we
+//     need the bio (which comment responses don't include).
 //   • Individual profile fetches share the CachedAdapter's 48h cache, so
 //     re-scans of an active handle mostly hit cache.
-//   • Face analysis only runs when bio was inconclusive AND analyzer is
-//     configured (env FACE_ANALYZER=aws with AWS creds).
+//   • Face analysis only runs when we have a usable avatar URL AND the
+//     analyzer is configured (env FACE_ANALYZER=aws with AWS creds).
 
 import type { DataAdapter } from "./adapter";
 import type { Platform } from "../types";
@@ -52,6 +55,14 @@ interface EnrichmentOptions {
   runFaceAnalysis?: boolean;   // default true (no-op if analyzer is 'mock')
 }
 
+// Internal per-person record.
+interface Enrichee {
+  username: string;
+  fullName?: string;
+  avatarUrl?: string;
+  bio?: string;
+}
+
 // ────────────────────────────────────────────────────────────────────────
 
 export async function enrichCommentAudience(
@@ -66,27 +77,41 @@ export async function enrichCommentAudience(
   // node:crypto out of the client bundle). Mock path resolves instantly.
   const analyzer = await getFaceAnalyzer();
 
-  // Dedupe by username — a user commenting 5 times still counts as one
-  // audience member. Preserve first-seen order so the sample is
-  // representative of the top-N most recent unique commenters.
-  const seen = new Set<string>();
-  const uniqueUsernames: string[] = [];
+  // Dedupe by username, seed with the inline metadata that the comment
+  // response already provided.
+  const seen = new Map<string, Enrichee>();
   for (const c of comments) {
     const u = c.username?.trim().toLowerCase();
     if (!u || seen.has(u)) continue;
-    seen.add(u);
-    uniqueUsernames.push(c.username);
-    if (uniqueUsernames.length >= maxProfiles) break;
+    seen.set(u, {
+      username: c.username,
+      fullName: c.fullName,
+      avatarUrl: c.avatarUrl,
+    });
+    if (seen.size >= maxProfiles) break;
   }
+  const enrichees = Array.from(seen.values());
 
-  // Fetch profiles in parallel. Each failure counts as "unknown" — we
-  // never let one hidden/deleted account break the whole scan.
-  const profiles = await Promise.all(
-    uniqueUsernames.map(async (username) => {
+  // Fetch full profiles only where we need bio (which no comment API
+  // returns inline). Parallel + best-effort — every failure is silent
+  // and we still have the inline avatarUrl/fullName from the comment.
+  await Promise.all(
+    enrichees.map(async (e) => {
       try {
-        return { username, profile: await data.getProfile(platform, username) };
-      } catch {
-        return { username, profile: null };
+        const p = await data.getProfile(platform, e.username);
+        e.bio = p.bio;
+        // Fill any inline gaps from the fresh profile.
+        if (!e.avatarUrl) e.avatarUrl = p.avatarUrl;
+        if (!e.fullName) e.fullName = p.displayName;
+      } catch (err) {
+        // Common — commenter renamed, deleted, or private. Not fatal:
+        // we still have the inline data from the comment.
+        if (process.env.DEBUG_ENRICHMENT === "1") {
+          console.warn(
+            `[enrichment] getProfile failed for ${e.username}:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
       }
     }),
   );
@@ -98,34 +123,32 @@ export async function enrichCommentAudience(
   };
   const brackets = { "18-24": 0, "25-34": 0, "35-44": 0, "45+": 0, unknown: 0 };
 
-  // Analyze each profile.
-  for (const p of profiles) {
-    if (!p.profile) {
-      counts.unknown += 1;
-      brackets.unknown += 1;
-      continue;
-    }
-    if (p.profile.bio) counts.with_bio += 1;
-    if (p.profile.avatarUrl) counts.with_avatar += 1;
+  for (const e of enrichees) {
+    if (e.bio) counts.with_bio += 1;
+    if (e.avatarUrl) counts.with_avatar += 1;
 
     let assignedGender: "male" | "female" | "nonbinary" | null = null;
     let assignedBracket: "18-24" | "25-34" | "35-44" | "45+" | null = null;
 
-    // 1. Bio — strongest signal (self-declared).
-    const bio: BioSignals = parseBio(p.profile.bio);
-    if (bio.inferredGender && bio.genderConfidence !== "low") {
-      assignedGender = bio.inferredGender;
-      counts.bio += 1;
-    }
-    if (bio.inferredAgeBracket) {
-      assignedBracket = bio.inferredAgeBracket;
+    // 1. Bio — strongest signal (self-declared). Only available when the
+    //    getProfile succeeded for this commenter.
+    if (e.bio) {
+      const bio: BioSignals = parseBio(e.bio);
+      if (bio.inferredGender && bio.genderConfidence !== "low") {
+        assignedGender = bio.inferredGender;
+        counts.bio += 1;
+      }
+      if (bio.inferredAgeBracket) assignedBracket = bio.inferredAgeBracket;
     }
 
-    // 2. Face — mid-strength, only when bio missed.
-    if ((!assignedGender || !assignedBracket) && runFace && p.profile.avatarUrl) {
+    // 2. Face — mid-strength, only when bio missed AND we have an avatar
+    //    AND an analyzer is configured.
+    if ((!assignedGender || !assignedBracket) && runFace && e.avatarUrl) {
       try {
-        const face = await analyzer.analyze(p.profile.avatarUrl);
-        if (!assignedGender && face.gender && face.genderConfidence > 0.85) {
+        const face = await analyzer.analyze(e.avatarUrl);
+        // Rekognition typically returns 0.7-0.95 for clear faces; 0.6 is
+        // our floor. Below that, treat as unresolved rather than guess.
+        if (!assignedGender && face.gender && face.genderConfidence > 0.6) {
           assignedGender = face.gender;
           counts.face += 1;
         }
@@ -137,11 +160,12 @@ export async function enrichCommentAudience(
       }
     }
 
-    // 3. Name dictionary — weakest, last resort for gender only.
+    // 3. Name dictionary — weakest. Prefer the full name (real human name)
+    //    when available; fall back to parsing the username.
     if (!assignedGender) {
       const firstName =
-        extractFirstName(p.profile.displayName) ??
-        extractFirstName(p.username?.replace(/[._\-]/g, " "));
+        extractFirstName(e.fullName) ??
+        extractFirstName(e.username?.replace(/[._\-]/g, " "));
       if (firstName) {
         const { classified } = classifyNamesLocal([firstName]);
         const c = classified[0];
@@ -152,7 +176,6 @@ export async function enrichCommentAudience(
       }
     }
 
-    // Tally into aggregates.
     if (assignedGender === "male") counts.male += 1;
     else if (assignedGender === "female") counts.female += 1;
     else if (assignedGender === "nonbinary") counts.nonbinary += 1;
@@ -162,12 +185,10 @@ export async function enrichCommentAudience(
     else brackets.unknown += 1;
   }
 
-  const total = profiles.length || 1;
+  const total = enrichees.length || 1;
   const genderKnown = counts.male + counts.female + counts.nonbinary;
   const pct = (n: number) => Number(((n / total) * 100).toFixed(1));
 
-  // Confidence: high if >50% of sample gave any signal, medium if >25%,
-  // low otherwise. Also cap at medium when the sample itself is <10.
   const knownPct = (genderKnown / total) * 100;
   let confidence: "high" | "medium" | "low" =
     knownPct >= 50 ? "high" : knownPct >= 25 ? "medium" : "low";
@@ -175,7 +196,10 @@ export async function enrichCommentAudience(
 
   return {
     sampleSize: total,
-    profilesFetched: profiles.filter((p) => p.profile).length,
+    // "profilesFetched" now means "how many people we had EITHER inline
+    // data OR a resolved profile for" — with the inline-first path this
+    // is normally equal to sampleSize.
+    profilesFetched: enrichees.filter((e) => e.avatarUrl || e.fullName || e.bio).length,
     malePct: pct(counts.male),
     femalePct: pct(counts.female),
     nonbinaryPct: pct(counts.nonbinary),

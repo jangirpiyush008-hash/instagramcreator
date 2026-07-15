@@ -38,6 +38,12 @@ export interface CommentItem {
   username: string;
   text: string;
   postedAt: string;
+  // Optional inline enrichment. When the comment API returns commenter
+  // metadata directly (HikerAPI does), audience-enrichment can skip the
+  // separate getProfile call, which is both slower and has a much higher
+  // failure rate for the sample size we typically care about.
+  fullName?: string;
+  avatarUrl?: string;
 }
 
 export interface DemographicSplit {

@@ -26,14 +26,24 @@ export class AwsRekognitionFaceAnalyzer implements FaceAnalyzer {
   async analyze(imageUrl: string): Promise<FaceResult> {
     let bytes: Buffer;
     try {
-      const r = await fetch(imageUrl, {
-        headers: { "user-agent": "Mozilla/5.0 (compatible; DecodeCreator/1.0)" },
-      });
-      if (!r.ok) return unknown();
+      // Match the referer/UA to the source CDN so hotlink-protected
+      // origins (Instagram, TikTok) don't 403. YouTube's yt3 CDN doesn't
+      // check referer but the extra header is harmless.
+      const headers = imageHeadersFor(imageUrl);
+      const r = await fetch(imageUrl, { headers });
+      if (!r.ok) {
+        if (process.env.DEBUG_ENRICHMENT === "1") {
+          console.warn(`[face] avatar fetch failed ${r.status} for ${imageUrl.slice(0, 80)}`);
+        }
+        return unknown();
+      }
       const ab = await r.arrayBuffer();
       bytes = Buffer.from(ab);
       if (bytes.length > 4_500_000) return unknown();
-    } catch {
+    } catch (e) {
+      if (process.env.DEBUG_ENRICHMENT === "1") {
+        console.warn("[face] avatar fetch threw:", e instanceof Error ? e.message : e);
+      }
       return unknown();
     }
 
@@ -76,6 +86,40 @@ export class AwsRekognitionFaceAnalyzer implements FaceAnalyzer {
       faceCount: json.FaceDetails?.length ?? 0,
       provider: "aws",
     };
+  }
+}
+
+// Instagram + TikTok CDNs return 403 to server-side requests without a
+// matching referer. YouTube's yt3 CDN is public and doesn't check.
+// Match the referer to the origin so hotlink-protected images resolve.
+const UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+function imageHeadersFor(url: string): Record<string, string> {
+  const host = safeHost(url);
+  if (!host) return { "user-agent": UA };
+  if (host.includes("cdninstagram.com") || host.includes("fbcdn.net")) {
+    return {
+      "user-agent": UA,
+      referer: "https://www.instagram.com/",
+      accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+    };
+  }
+  if (host.includes("tiktokcdn") || host.includes("bytecdn")) {
+    return {
+      "user-agent": UA,
+      referer: "https://www.tiktok.com/",
+      accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+    };
+  }
+  return { "user-agent": UA };
+}
+
+function safeHost(url: string): string | null {
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
   }
 }
 

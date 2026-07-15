@@ -18,7 +18,10 @@ import { adapterFor } from "@/core/data/router";
 
 const SAMPLE_TARGET_COMMENTS = 500;   // fetch this many recent comments to dedupe from
 const ENRICHMENT_CAP = 25;            // then enrich at most this many unique profiles
-const MIN_KNOWN = 8;                  // require at least this many resolved genders to publish
+const MIN_KNOWN = 4;                  // publish once we've resolved this many genders
+                                      // (small samples get a "low" confidence label rather than
+                                      // being hidden — HikerAPI's comment endpoint returns 50
+                                      // per post which typically dedupes to 10-15 unique users)
 
 export const genderSplit: SocialTool = {
   id: "gender-split",

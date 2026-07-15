@@ -71,7 +71,17 @@ interface HikerMediaRaw {
 interface HikerCommentRaw {
   pk?: number | string;
   id?: string;
-  user?: { username?: string; full_name?: string };
+  // HikerAPI includes commenter metadata inline — profile_pic_url and
+  // full_name are almost always populated. We surface them via CommentItem
+  // so audience-enrichment can skip a separate getProfile call per
+  // commenter (which is slow and has a much higher failure rate for
+  // renamed / deleted / private accounts).
+  user?: {
+    username?: string;
+    full_name?: string;
+    profile_pic_url?: string;
+    profile_pic_url_hd?: string;
+  };
   user_id?: string;
   text?: string;
   content?: string;
@@ -368,6 +378,9 @@ export class HikerInstagramAdapter extends MockProvider {
             : c.created_at
             ? new Date(c.created_at * 1000).toISOString()
             : new Date().toISOString(),
+          fullName: c.user?.full_name,
+          // Prefer the HD variant when present — better face-detection accuracy.
+          avatarUrl: c.user?.profile_pic_url_hd ?? c.user?.profile_pic_url,
         }));
         const totalComments = post.comments;
         return {
