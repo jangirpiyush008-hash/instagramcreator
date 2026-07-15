@@ -131,7 +131,25 @@ export async function POST(req: Request) {
   const walletAddress = process.env.SERVICES_USDT_WALLET_BEP20 ?? DEFAULT_WALLET;
   const orderRef = shortRef();
 
-  const supa = supabaseService();
+  // Wrap the DB call so we return an ACTIONABLE error to the client and
+  // log it too. The generic "Could not create order" was hiding the
+  // real cause (usually: migration 0008 hasn't been applied yet →
+  // Postgres 42P01 "relation service_orders does not exist").
+  let supa;
+  try {
+    supa = supabaseService();
+  } catch (e) {
+    console.error("[services/order] supabase env misconfigured:", e);
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "Server misconfigured — Supabase env vars missing on the deploy. Contact support.",
+      },
+      { status: 500 },
+    );
+  }
+
   const { error } = await supa.from("service_orders").insert({
     order_ref: orderRef,
     email,
@@ -145,9 +163,29 @@ export async function POST(req: Request) {
     token: "USDT",
   });
   if (error) {
-    console.error("[services/order] insert failed:", error.message);
+    console.error(
+      "[services/order] insert failed:",
+      error.code,
+      error.message,
+      error.details,
+    );
+    // Postgres 42P01 = "undefined_table" → the migration hasn't run.
+    // Surface a very specific message so the operator can act instantly.
+    if (error.code === "42P01") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Orders table isn't set up yet — the operator needs to run migration 0008_service_orders.sql on Supabase. Try again in a few minutes.",
+        },
+        { status: 500 },
+      );
+    }
+    // Everything else: pass the DB message through. It's our own DB —
+    // nothing sensitive exposed, and it makes production debugging
+    // one-shot instead of a Railway-logs round trip.
     return NextResponse.json(
-      { ok: false, error: "Could not create order. Please try again." },
+      { ok: false, error: `Order create failed: ${error.message}` },
       { status: 500 },
     );
   }
