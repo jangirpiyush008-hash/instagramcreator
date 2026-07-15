@@ -40,3 +40,11 @@ export const toolsForPlatform = (p: Platform): SocialTool[] =>
 
 export const getTool = (id: string): SocialTool | undefined =>
   TOOLS.find((t) => t.id === id);
+
+// Slug lookup drives the /{platform}/{handle}/{slug} SEO route. Slugs
+// live in seo.slug (curated for search — e.g. gender-split's slug is
+// 'audience-demographics'). We ALSO accept id as a fallback so the
+// route works even if we haven't picked a slug yet.
+export const getToolBySlug = (slug: string): SocialTool | undefined =>
+  TOOLS.find((t) => t.seo.slug === slug) ??
+  TOOLS.find((t) => t.id === slug);

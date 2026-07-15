@@ -19,9 +19,11 @@ export function IntentPicker({
   return (
     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {tools.map((t) => {
-        const href = `/${platform}/${encodeURIComponent(handle)}?tool=${t.id}`;
+        // Prefer the SEO slug for the canonical URL (indexable per-tool
+        // page). Fall back to id if slug isn't set for some reason.
+        const slug = t.seo.slug ?? t.id;
+        const href = `/${platform}/${encodeURIComponent(handle)}/${slug}`;
         const active = selectedToolId === t.id;
-        const shipped = t.phase === 0;
         return (
           <Link
             key={t.id}
@@ -33,19 +35,8 @@ export function IntentPicker({
                 : "border-border bg-card/50 hover:border-primary/40 hover:bg-card")
             }
           >
-            <div className="flex items-start justify-between gap-3">
-              <div className="text-xs uppercase tracking-wider text-muted-foreground">
-                {t.name}
-              </div>
-              {shipped ? (
-                <span className="text-[10px] uppercase tracking-wider rounded-full bg-gradient-ig text-white px-2 py-0.5 font-medium">
-                  Live
-                </span>
-              ) : (
-                <span className="text-[10px] uppercase tracking-wider rounded-full border border-border bg-muted text-muted-foreground px-2 py-0.5">
-                  Phase {t.phase}
-                </span>
-              )}
+            <div className="text-xs uppercase tracking-wider text-muted-foreground">
+              {t.name}
             </div>
             <div className="font-medium mt-2">{t.intentLabel}</div>
             <p className="text-sm text-muted-foreground mt-2">{t.blurb}</p>

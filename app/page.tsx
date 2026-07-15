@@ -1,25 +1,31 @@
 import Link from "next/link";
 import { ScanForm } from "@/web/components/ScanForm";
 import { TOOLS } from "@/core/tools/registry";
+import { ANON_LIMITS } from "@/core/billing/tiers";
 import type { Platform } from "@/core/types";
 
 // Trim each tool to serializable fields before passing to client UI — the full
 // SocialTool holds a run() function that can't cross the server→client boundary.
 type ToolMeta = {
   id: string;
+  slug: string;
   name: string;
   intentLabel: string;
   blurb: string;
   platforms: Platform[];
   phase: 0 | 1 | 2 | 3;
+  anonAllowed: boolean;
 };
+const ANON_TOOLS = new Set<string>(ANON_LIMITS.toolIds);
 const TOOL_META: ToolMeta[] = TOOLS.map((t) => ({
   id: t.id,
+  slug: t.seo.slug ?? t.id,
   name: t.name,
   intentLabel: t.intentLabel,
   blurb: t.blurb,
   platforms: [...t.platforms],
   phase: t.phase,
+  anonAllowed: ANON_TOOLS.has(t.id),
 }));
 
 export default function HomePage() {
@@ -69,19 +75,27 @@ export default function HomePage() {
       </section>
 
       <section className="container py-16">
-        <div className="max-w-3xl mx-auto grid sm:grid-cols-3 gap-4 text-sm">
+        <div className="max-w-4xl mx-auto grid sm:grid-cols-3 gap-4 text-sm">
           <ValueCard
-            title="See the answer"
-            body="Free portion every time. Pay only to unlock the locked metrics."
+            title="Free to try"
+            body={`${ANON_LIMITS.scansPerDay} scans a day, no signup. Sign up free for 20 scans a month across 4 tools.`}
           />
           <ValueCard
             title="No notification"
-            body="Public data. The account never knows you ran a scan."
+            body="Public data only. The account you scan is never notified — nothing follows or DMs them."
           />
           <ValueCard
-            title="One unlock or sub"
-            body="Pay once for a single report, or subscribe for unlimited."
+            title="Grow with a plan"
+            body="Starter ₹599/mo unlocks all 12 tools. Pro & Scale add bundled full-reports and priority support."
           />
+        </div>
+        <div className="text-center mt-8">
+          <Link
+            href="/pricing"
+            className="inline-block rounded-md bg-gradient-ig text-white px-5 py-2.5 text-sm font-medium hover:brightness-110 transition"
+          >
+            See pricing →
+          </Link>
         </div>
       </section>
     </>
@@ -89,36 +103,37 @@ export default function HomePage() {
 }
 
 function ToolCard({ tool }: { tool: ToolMeta }) {
-  const shipped = tool.phase === 0;
-  // Every card is clickable in Phase 0 — picks a demo handle so users can see
-  // the result UI for that tool. Live tool hits the real API; coming-soon
-  // tools render their sample view with a "preview" banner.
+  // Every card is clickable in Phase 0 — picks a demo handle so users
+  // can see the result UI for that tool. Canonical URL uses the SEO slug.
   const demoPlatform = tool.platforms.includes("instagram") ? "instagram" : "tiktok";
   const demoHandle = "creator";
-  const href = `/${demoPlatform}/${demoHandle}?tool=${tool.id}`;
+  const href = `/${demoPlatform}/${demoHandle}/${tool.slug}`;
+  // Short 1-line teaser derived from the blurb — we truncate long ones
+  // so cards stay compact instead of jumping to 4 lines.
+  const teaser =
+    tool.blurb.length > 90 ? tool.blurb.slice(0, 87).trimEnd() + "…" : tool.blurb;
   return (
     <Link
       href={href}
-      className="group rounded-xl border border-border/80 bg-card/60 p-5 transition-all hover:border-primary/60 hover:-translate-y-0.5 block"
+      className="group rounded-xl border border-border/60 bg-card/40 p-5 transition-all hover:border-primary/50 hover:bg-card/70 hover:-translate-y-0.5 block relative"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="text-xs uppercase tracking-wider text-muted-foreground">
-          {tool.name}
-        </div>
-        {shipped ? (
-          <span className="text-[10px] uppercase tracking-wider rounded-full bg-gradient-ig text-white px-2 py-0.5 font-medium">
-            Live
-          </span>
-        ) : (
-          <span className="text-[10px] uppercase tracking-wider rounded-full border border-border bg-muted text-muted-foreground px-2 py-0.5">
-            Phase {tool.phase}
-          </span>
-        )}
+      {tool.anonAllowed && (
+        <span
+          className="absolute top-3 right-3 text-[10px] uppercase tracking-wider text-emerald-300/80"
+          title="Try without signing in"
+        >
+          Free preview
+        </span>
+      )}
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">
+        {tool.name}
       </div>
-      <div className="mt-2 font-medium text-lg leading-snug">{tool.intentLabel}</div>
-      <p className="text-sm text-muted-foreground mt-2">{tool.blurb}</p>
+      <div className="mt-2 font-medium text-lg leading-snug">
+        {tool.intentLabel}
+      </div>
+      <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{teaser}</p>
       <div className="mt-3 text-xs text-primary/80 opacity-0 group-hover:opacity-100 transition-opacity">
-        Preview →
+        Try it →
       </div>
     </Link>
   );
