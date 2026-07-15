@@ -50,9 +50,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </header>
           <main className="flex-1">{children}</main>
           <footer className="border-t border-border/60 text-xs text-muted-foreground">
-            <div className="container py-6 flex flex-wrap gap-4 justify-between">
-              <span>© DecodeCreator. Public-data analytics for creators and brands. Instagram + TikTok.</span>
-              <span>Public data only — the account is never notified.</span>
+            <div className="container py-6 flex flex-wrap gap-4 justify-between items-center">
+              <span>© DecodeCreator. Public-data analytics for creators and brands. Instagram + TikTok + YouTube.</span>
+              <nav className="flex gap-4">
+                <Link href="/docs" className="hover:text-foreground transition-colors">API</Link>
+                <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
+                <Link href="/terms" className="hover:text-foreground transition-colors">Terms</Link>
+                <a href="mailto:support.decodecreator@gmail.com" className="hover:text-foreground transition-colors">Support</a>
+              </nav>
             </div>
           </footer>
         </div>

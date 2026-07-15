@@ -234,8 +234,8 @@ print(r.json()["data"]["free"]["engagementRatePct"])`}
         <h2 className="text-2xl font-semibold tracking-tight">Support</h2>
         <p className="text-sm text-muted-foreground">
           Bugs, feature requests, or enterprise questions — email{" "}
-          <a href="mailto:hello@decodecreator.com" className="underline">
-            hello@decodecreator.com
+          <a href="mailto:support.decodecreator@gmail.com" className="underline">
+            support.decodecreator@gmail.com
           </a>
           . SLA on Pro and above.
         </p>
