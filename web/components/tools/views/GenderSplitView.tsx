@@ -10,51 +10,55 @@ interface Props {
   data?: Record<string, unknown>;
 }
 
-interface ClassifiedName {
-  name: string;
-  gender: "male" | "female" | null;
-  probability: number;
-}
-
-const SOURCE_LABEL: Record<string, string> = {
-  followers: "Sampled from public follower list",
-  commenters: "Sampled from recent commenters (followers not available for this account)",
-  none: "No sample obtained",
+type AgeBrackets = {
+  "18-24": number;
+  "25-34": number;
+  "35-44": number;
+  "45+": number;
+  unknown: number;
 };
+
+interface SignalsUsed {
+  bio: number;
+  face: number;
+  name: number;
+}
 
 export function GenderSplitView({ handle, data }: Props) {
   const insufficientData = (data?.insufficientData as boolean) ?? false;
   const reason = data?.reason as string | undefined;
   const malePct = data?.malePct as number | null;
   const femalePct = data?.femalePct as number | null;
+  const nonbinaryPct = (data?.nonbinaryPct as number) ?? 0;
   const unknownPct = (data?.unknownPct as number) ?? 0;
   const sampleSize = (data?.sampleSize as number) ?? 0;
-  const classifiableCount = (data?.classifiableCount as number) ?? 0;
-  const confidentClassifications = (data?.confidentClassifications as number) ?? 0;
-  const source = (data?.source as string) ?? "none";
-  const confidence = (data?.confidence as string) ?? "Low";
+  const profilesFetched = (data?.profilesFetched as number) ?? 0;
+  const confidence = ((data?.confidence as string) ?? "low").toLowerCase();
   const methodology = data?.methodology as string | undefined;
-  const topNames = (data?.topClassifiedNames as ClassifiedName[] | undefined) ?? [];
   const caveat = data?.caveat as string | undefined;
+  const ageBrackets = data?.ageBrackets as AgeBrackets | undefined;
+  const signalsUsed = data?.signalsUsed as SignalsUsed | undefined;
+  const faceAnalyzer = (data?.faceAnalyzer as string | undefined) ?? "mock";
+  const completeness = data?.profileCompletenessPct as number | undefined;
 
   if (insufficientData) {
     return (
       <div className="space-y-6">
-        <SectionTitle hint={`@${handle}`}>Audience gender split</SectionTitle>
+        <SectionTitle hint={`@${handle}`}>Audience demographics</SectionTitle>
         {caveat && <CaveatBanner>{caveat}</CaveatBanner>}
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-6 space-y-3">
           <div className="text-xl font-semibold text-amber-200">Insufficient data</div>
           <p className="text-sm text-muted-foreground">{reason}</p>
           {sampleSize > 0 && (
             <div className="grid sm:grid-cols-2 gap-3 mt-2">
-              <MetricCard label="Sample size" value={sampleSize.toLocaleString()} />
-              <MetricCard label="Classifiable names" value={classifiableCount.toLocaleString()} />
+              <MetricCard label="Commenter sample" value={sampleSize.toLocaleString()} />
+              <MetricCard label="Profiles resolved" value={profilesFetched.toLocaleString()} />
             </div>
           )}
         </div>
         {methodology && (
           <div className="rounded-xl border border-border bg-card/40 p-5 text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">Methodology:</span> {methodology}
+            <span className="font-medium text-foreground">How this works:</span> {methodology}
           </div>
         )}
       </div>
@@ -63,13 +67,18 @@ export function GenderSplitView({ handle, data }: Props) {
 
   const femaleWidth = Math.max(femalePct ?? 0, 0);
   const maleWidth = Math.max(malePct ?? 0, 0);
+  const nonbinaryWidth = Math.max(nonbinaryPct, 0);
 
   return (
     <div className="space-y-6">
-      <SectionTitle hint={`@${handle} · ${sampleSize.toLocaleString()} sampled`}>Audience gender split</SectionTitle>
+      <SectionTitle hint={`@${handle} · ${profilesFetched.toLocaleString()} profiles analyzed`}>
+        Audience demographics
+      </SectionTitle>
       {caveat && <CaveatBanner>{caveat}</CaveatBanner>}
 
+      {/* Gender split */}
       <div className="rounded-xl border border-border bg-card/60 p-6 space-y-6">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">Gender split</div>
         <div className="flex w-full h-6 rounded-full overflow-hidden border border-border/60">
           {femaleWidth > 0 && (
             <div
@@ -89,53 +98,99 @@ export function GenderSplitView({ handle, data }: Props) {
               M
             </div>
           )}
+          {nonbinaryWidth > 0 && (
+            <div
+              className="bg-[hsl(268_84%_60%)] flex items-center justify-end pr-2 text-[10px] font-medium text-white"
+              style={{ width: `${nonbinaryWidth}%` }}
+              title={`Non-binary ${nonbinaryWidth}%`}
+            >
+              NB
+            </div>
+          )}
         </div>
 
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="grid sm:grid-cols-3 gap-3">
           <SplitCard label="Female" value={femalePct ?? 0} colorClass="bg-[hsl(322_95%_60%)]" />
           <SplitCard label="Male" value={malePct ?? 0} colorClass="bg-[hsl(220_90%_60%)]" />
+          <SplitCard label="Non-binary" value={nonbinaryPct} colorClass="bg-[hsl(268_84%_60%)]" />
         </div>
       </div>
 
+      {/* Age brackets */}
+      {ageBrackets && (
+        <section className="rounded-xl border border-border bg-card/60 p-6 space-y-4">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">
+            Age brackets · estimated
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <AgeCard label="18-24" pct={ageBrackets["18-24"]} />
+            <AgeCard label="25-34" pct={ageBrackets["25-34"]} />
+            <AgeCard label="35-44" pct={ageBrackets["35-44"]} />
+            <AgeCard label="45+" pct={ageBrackets["45+"]} />
+          </div>
+          {ageBrackets.unknown > 50 && (
+            <p className="text-xs text-muted-foreground">
+              {ageBrackets.unknown.toFixed(0)}% unresolved — bio didn&apos;t include age, and
+              face-based age estimation isn&apos;t configured for this deployment
+              (analyzer: <span className="font-mono">{faceAnalyzer}</span>).
+            </p>
+          )}
+        </section>
+      )}
+
+      {/* Sample + signal breakdown */}
       <section>
-        <SectionTitle>Sample details</SectionTitle>
+        <SectionTitle>Sample &amp; signals</SectionTitle>
         <div className="grid sm:grid-cols-4 gap-3">
-          <MetricCard label="Sampled" value={sampleSize.toLocaleString()} sub={SOURCE_LABEL[source] ?? source} accent="cyan" />
-          <MetricCard label="Classifiable" value={classifiableCount.toLocaleString()} sub="names we could parse" />
-          <MetricCard label="Confident" value={confidentClassifications.toLocaleString()} sub="≥65% probability" accent="emerald" />
-          <MetricCard label="Confidence" value={confidence} sub="High >60 · Med 30-60 · Low <30" accent={confidence === "High" ? "emerald" : confidence === "Medium" ? "amber" : "red"} />
+          <MetricCard
+            label="Profiles analyzed"
+            value={profilesFetched.toLocaleString()}
+            sub={`of ${sampleSize} sampled`}
+            accent="cyan"
+          />
+          <MetricCard
+            label="Confidence"
+            value={confidence[0]?.toUpperCase() + confidence.slice(1)}
+            sub="from signal coverage"
+            accent={confidence === "high" ? "emerald" : confidence === "medium" ? "amber" : "red"}
+          />
+          {signalsUsed && (
+            <>
+              <MetricCard
+                label="Bio-inferred"
+                value={signalsUsed.bio.toLocaleString()}
+                sub="strongest signal"
+                accent="emerald"
+              />
+              <MetricCard
+                label="Face + name"
+                value={(signalsUsed.face + signalsUsed.name).toLocaleString()}
+                sub={
+                  faceAnalyzer === "mock"
+                    ? `${signalsUsed.name} via name (face API not configured)`
+                    : `${signalsUsed.face} via face · ${signalsUsed.name} via name`
+                }
+              />
+            </>
+          )}
         </div>
       </section>
 
-      {topNames.length > 0 && (
-        <section>
-          <SectionTitle>Highest-confidence classifications</SectionTitle>
-          <div className="flex flex-wrap gap-2">
-            {topNames.map((n) => (
-              <div
-                key={n.name}
-                className={
-                  "rounded-full px-3 py-1.5 text-sm border " +
-                  (n.gender === "female"
-                    ? "border-[hsl(322_95%_60%)]/50 bg-[hsl(322_95%_60%)]/10 text-[hsl(322_95%_80%)]"
-                    : "border-[hsl(220_90%_60%)]/50 bg-[hsl(220_90%_60%)]/10 text-[hsl(220_90%_80%)]")
-                }
-              >
-                <span className="font-medium capitalize">{n.name}</span>
-                <span className="text-xs opacity-80 ml-1.5">
-                  {n.gender} · {Math.round(n.probability * 100)}%
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
+      {typeof completeness === "number" && completeness > 0 && (
+        <div className="rounded-xl border border-border bg-card/40 p-4 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">
+            {completeness.toFixed(0)}% audience-profile completeness
+          </span>{" "}
+          — % of sampled commenters with both a bio AND a custom avatar. Healthy audiences
+          sit at 60%+; below 30% suggests bot-heavy engagement.
+        </div>
       )}
 
       {unknownPct > 0 && (
         <div className="rounded-xl border border-border bg-card/40 p-4 text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{unknownPct.toFixed(1)}% unclassified</span> —
-          names we couldn&apos;t confidently gender-tag (non-Western names classify less accurately,
-          or the name is genuinely ambiguous). These are excluded from the M/F percentages above.
+          <span className="font-medium text-foreground">{unknownPct.toFixed(1)}% unresolved</span> —
+          bio didn&apos;t give us a signal, no face match, and the display name wasn&apos;t in our
+          dictionary. Excluded from the M/F percentages above (never guessed).
         </div>
       )}
 
@@ -157,6 +212,21 @@ function SplitCard({ label, value, colorClass }: { label: string; value: number;
       </div>
       <div className="text-4xl font-semibold mt-2 tabular-nums">
         {value.toFixed(1)}%
+      </div>
+    </div>
+  );
+}
+
+function AgeCard({ label, pct }: { label: string; pct: number }) {
+  return (
+    <div className="rounded-lg border border-border bg-card/40 p-4">
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="text-2xl font-semibold mt-1 tabular-nums">{pct.toFixed(0)}%</div>
+      <div className="mt-2 h-1.5 rounded-full bg-border/60 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-gradient-ig"
+          style={{ width: `${Math.min(100, pct * 2)}%` }}
+        />
       </div>
     </div>
   );

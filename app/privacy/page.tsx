@@ -85,7 +85,8 @@ export default function PrivacyPage() {
           When you analyze a public Instagram, TikTok, or YouTube account, we
           fetch data that is <b>already publicly visible</b> on that
           platform&apos;s website — follower count, post metrics, video views,
-          comment authors, etc. We aggregate this into the analytics you see.
+          comment authors, publicly-set bios, and publicly-set profile
+          pictures. We aggregate this into the analytics you see.
         </p>
         <p>
           The scanned account is <b>not notified</b>. Nothing you do on
@@ -97,6 +98,38 @@ export default function PrivacyPage() {
           session cookies, or private account data. Private accounts return
           a &quot;private account&quot; response — we do not attempt to
           bypass.
+        </p>
+      </Section>
+
+      <Section title="Audience demographic inference (gender & age)">
+        <p>
+          For the &quot;Audience Gender &amp; Age&quot; tool, we infer aggregate
+          demographics from public commenter profiles. Our pipeline, in order:
+        </p>
+        <List
+          items={[
+            "Bio text parsing — we look for self-declared pronouns (she/her, he/him, they/them), gendered self-descriptors (mom, dad, wife, husband), and explicit age mentions (\"23 y/o\", \"born 1998\"). Strongest, self-declared signal.",
+            "Profile-picture demographic estimate (aggregate only) — when configured, we may run a face-detection API over publicly visible profile pictures to estimate age range and gender in aggregate. We never identify individuals. This is opt-in per deployment and disabled by default; when enabled, we use Amazon Rekognition's DetectFaces API. No image data is stored.",
+            "First-name dictionary lookup — a curated in-repo dictionary of Indian and Western first names. Weakest signal, used only when bio and face were inconclusive.",
+          ]}
+        />
+        <p>
+          <b>Aggregate output only.</b> The tool returns audience percentages
+          and age-bracket distributions across the sample. We never show
+          per-individual demographic classifications in tool output, exports,
+          or API responses.
+        </p>
+        <p>
+          <b>No facial recognition or identification.</b> We use face
+          <em> detection</em> to estimate demographic attributes only. We do
+          not build a face database, do not match faces to identities, and
+          do not store face embeddings. Each analysis is a stateless request
+          to a third-party API for that one image, discarded after.
+        </p>
+        <p>
+          <b>Sample cap and caching.</b> At most 25 commenter profiles are
+          enriched per scan. Profile data is cached for 48 hours so re-scans
+          of the same handle avoid duplicate provider calls.
         </p>
       </Section>
 
@@ -122,6 +155,7 @@ export default function PrivacyPage() {
             "Railway — our hosting provider (runs the Node.js server)",
             "Razorpay / LemonSqueezy — payment processors (only sees the data needed to charge your card and confirm a subscription)",
             "Provider APIs (HikerAPI, tikwm, YouTube Data API v3) — we send them the public handle you asked to scan; they return public data",
+            "Amazon Rekognition (only when audience-demographic inference is enabled) — we send publicly visible profile-picture URLs for one-shot face detection; no data is stored on our side or theirs beyond the request",
           ]}
         />
         <p>

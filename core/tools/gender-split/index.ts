@@ -1,79 +1,53 @@
 import type { SocialTool } from "../types";
-import { classifyNamesLocal, extractFirstName } from "@/core/data/name-gender";
-import type { FollowerLite } from "@/core/data/adapter";
+import { enrichCommentAudience } from "@/core/data/audience-enrichment";
+import { adapterFor } from "@/core/data/router";
 
-// Real audience-gender estimate. Samples ~100 followers (public API), extracts
-// their first names, classifies each against a curated in-repo dictionary of
-// Indian + Western first names, aggregates.
+// Audience gender + age split from public commenter profiles.
 //
-// No external API — the dictionary lives at core/data/name-gender.ts and is
-// extended by hand as we see missing names in real scans. Zero cost per call,
-// zero rate limits, zero external dependencies.
+// Pipeline (per commenter, orchestrated in core/data/audience-enrichment):
+//   1. Bio parse   — pronouns / gendered self-descriptors / age hints. Strongest.
+//   2. Face API    — profile-picture demographic estimate. Opt-in via env.
+//   3. Name dict   — first-name → gender heuristic. Weakest, always-on fallback.
 //
-// Fallback path: some accounts have their follower list blocked (private
-// accounts, or providers that just don't expose it). In that case we fall
-// back to sampling recent commenters — engaged-user bias but real signal.
+// AGGREGATE ONLY. Individual results never leak out — the view renders
+// audience percentages + age brackets + confidence, never per-person data.
 //
-// Honesty guarantee: if BOTH paths fail (or classify too few names), the
-// tool returns null percentages and a "insufficient data" state — no fake
-// splits shown as real. Bug we already fought once, never again.
+// Honesty guarantee: if the sample fails or too few profiles are usable,
+// we return insufficientData:true and null percentages — no fake splits.
 
-const SAMPLE_TARGET = 100;
-// On YouTube we have to sample commenters (no follower list on YT), so bias
-// toward a larger sample to counter comment-authorship skew.
-const SAMPLE_TARGET_YOUTUBE = 500;
-const MIN_CONFIDENT = 20; // don't publish a split from fewer than this many classifiable names
-
-const YT_CAVEAT =
-  "⚠️ Tentative on YouTube — YouTube Data API does NOT expose subscriber lists (only channel owners see demographics in Studio). We estimate audience gender by sampling recent commenters. This skews slightly toward the more engaged / opinionated slice of your audience — treat as directional, not exact. Passive viewers are underrepresented.";
+const SAMPLE_TARGET_COMMENTS = 500;   // fetch this many recent comments to dedupe from
+const ENRICHMENT_CAP = 25;            // then enrich at most this many unique profiles
+const MIN_KNOWN = 8;                  // require at least this many resolved genders to publish
 
 export const genderSplit: SocialTool = {
   id: "gender-split",
-  name: "Audience Gender Split",
-  intentLabel: "What's the male / female split?",
+  name: "Audience Gender & Age",
+  intentLabel: "Who is this creator's audience?",
   blurb:
-    "Estimate audience gender by classifying the first names of a follower sample. Free names-only, no biometric analysis.",
+    "Estimate audience gender split and age brackets from public commenter profiles. Bio pronouns, self-descriptors, and (when configured) profile-picture inference.",
   platforms: ["instagram", "tiktok", "youtube"],
   phase: 0,
   seo: {
     slug: "audience-demographics",
-    title: "Audience Gender Split — Instagram, TikTok & YouTube",
+    title: "Audience Gender & Age Split — Instagram, TikTok & YouTube",
     description:
-      "Estimate any public account's audience gender from public follower names.",
+      "Estimate any public account's audience gender split and age brackets from public profile data.",
   },
   async run({ platform, handle, data }) {
     const profile = await data.getProfile(platform, handle);
     const isYouTube = platform === "youtube";
-    // YT never returns followers → jump straight to commenters. IG/TT try
-    // followers first (best sample), fall back to commenters.
-    const sampleTarget = isYouTube ? SAMPLE_TARGET_YOUTUBE : SAMPLE_TARGET;
 
-    let source: "followers" | "commenters" | "none" = "none";
-    let sample: FollowerLite[] = [];
-    if (!isYouTube) {
-      try {
-        sample = await data.getFollowerSample(platform, handle, sampleTarget);
-        if (sample.length > 0) source = "followers";
-      } catch (e) {
-        console.warn("[gender-split] getFollowerSample failed:", e instanceof Error ? e.message : e);
-      }
+    // Sample recent commenters. YT: falls through commentThreads API.
+    // IG/TT: uses recent-post comments.
+    let comments: { username: string; text: string; postedAt: string; id: string }[] = [];
+    try {
+      const res = await data.getRecentComments(platform, handle, SAMPLE_TARGET_COMMENTS);
+      comments = res.comments ?? [];
+    } catch (e) {
+      console.warn("[gender-split] comment fetch failed:", e instanceof Error ? e.message : e);
     }
 
-    // Fallback (also the primary path for YT) — sample commenters.
-    if (sample.length === 0) {
-      try {
-        const commentsResult = await data.getRecentComments(platform, handle, sampleTarget);
-        sample = commentsResult.comments.map((c) => ({
-          username: c.username,
-          fullName: undefined, // comments don't include full name — we'll parse username as best-effort
-        }));
-        if (sample.length > 0) source = "commenters";
-      } catch (e) {
-        console.warn("[gender-split] getRecentComments fallback failed:", e instanceof Error ? e.message : e);
-      }
-    }
-
-    if (sample.length === 0) {
+    if (comments.length === 0) {
       return {
         toolId: "gender-split",
         platform,
@@ -81,34 +55,31 @@ export const genderSplit: SocialTool = {
         free: {
           followers: profile.followers,
           insufficientData: true,
-          reason: isYouTube
-            ? "Couldn't fetch commenter names for this channel. Comments may be disabled, or the channel has no recent uploads."
-            : "Couldn't fetch a follower or commenter sample for this account. The account may be private, hidden, or too new.",
+          reason:
+            "Couldn't fetch any recent commenters for this account. Comments may be disabled, or there are no recent posts.",
           malePct: null,
           femalePct: null,
-          unknownPct: null,
-          source,
-          ...(isYouTube ? { caveat: YT_CAVEAT } : {}),
-          methodology:
-            "We classify audience gender by extracting first names from a public follower sample and looking each name up against our curated in-repo dictionary of Indian and Western first names. Never biometric, never a face scan, never an external API call.",
+          methodology: METHODOLOGY,
+          caveat: isYouTube ? YT_CAVEAT : undefined,
         },
         locked: {},
         generatedAt: new Date().toISOString(),
       };
     }
 
-    // Extract first names. Prefer the `fullName` field when the API returned
-    // it (IG usually does), otherwise try parsing the username as a fallback.
-    const firstNames: string[] = [];
-    for (const s of sample) {
-      const fromFull = extractFirstName(s.fullName);
-      const fromUser = extractFirstName(s.username?.replace(/[._\-]/g, " "));
-      const name = fromFull ?? fromUser;
-      if (name) firstNames.push(name);
-    }
+    // Reuse the same adapter the caller passed in (already CachedAdapter-wrapped
+    // via executeScan). Falls back to a fresh adapter on the rare direct call.
+    const adapterForEnrichment = data ?? adapterFor(platform);
 
-    const classifiableCount = firstNames.length;
-    if (classifiableCount < MIN_CONFIDENT) {
+    const audience = await enrichCommentAudience(
+      platform,
+      adapterForEnrichment,
+      comments,
+      { maxProfiles: ENRICHMENT_CAP },
+    );
+
+    const known = audience.malePct + audience.femalePct + audience.nonbinaryPct;
+    if (known < (MIN_KNOWN / audience.sampleSize) * 100) {
       return {
         toolId: "gender-split",
         platform,
@@ -116,38 +87,21 @@ export const genderSplit: SocialTool = {
         free: {
           followers: profile.followers,
           insufficientData: true,
-          reason: `Only ${classifiableCount} classifiable first name${classifiableCount === 1 ? "" : "s"} out of ${sample.length} sampled — not enough to publish a reliable split.`,
+          reason: `Sampled ${audience.sampleSize} commenter profiles but only resolved ${Math.round(
+            (known / 100) * audience.sampleSize,
+          )} genders — not enough to publish a reliable split.`,
           malePct: null,
           femalePct: null,
-          unknownPct: null,
-          sampleSize: sample.length,
-          classifiableCount,
-          source,
-          ...(isYouTube ? { caveat: YT_CAVEAT } : {}),
-          methodology:
-            "We classify audience gender by extracting first names from a public follower sample and looking each name up against our curated in-repo dictionary of Indian and Western first names. Never biometric, never a face scan, never an external API call.",
+          sampleSize: audience.sampleSize,
+          profilesFetched: audience.profilesFetched,
+          signalsUsed: audience.signalsUsed,
+          methodology: METHODOLOGY,
+          caveat: isYouTube ? YT_CAVEAT : undefined,
         },
         locked: {},
         generatedAt: new Date().toISOString(),
       };
     }
-
-    const { aggregate, classified } = classifyNamesLocal(firstNames);
-    const totalKnown = aggregate.male + aggregate.female;
-    const malePct = totalKnown > 0 ? Number(((aggregate.male / totalKnown) * 100).toFixed(1)) : 0;
-    const femalePct = totalKnown > 0 ? Number(((aggregate.female / totalKnown) * 100).toFixed(1)) : 0;
-    const unknownPct = firstNames.length > 0
-      ? Number(((aggregate.unknown / firstNames.length) * 100).toFixed(1))
-      : 0;
-
-    // Confidence label — a function of how many names we successfully classified
-    // AND how well we sampled the audience overall.
-    const confidence =
-      totalKnown >= 60
-        ? "High"
-        : totalKnown >= 30
-        ? "Medium"
-        : "Low";
 
     return {
       toolId: "gender-split",
@@ -156,29 +110,29 @@ export const genderSplit: SocialTool = {
       free: {
         followers: profile.followers,
         insufficientData: false,
-        malePct,
-        femalePct,
-        unknownPct,
-        sampleSize: sample.length,
-        classifiableCount,
-        confidentClassifications: totalKnown,
-        source,
-        confidence,
-        ...(isYouTube ? { caveat: YT_CAVEAT } : {}),
-        methodology:
-          (isYouTube ? YT_CAVEAT + " " : "") +
-          "We classify audience gender by extracting first names from a public follower sample and looking each name up against our curated in-repo dictionary of Indian and Western first names. Zero external API calls, zero biometric analysis. Names we don't recognise are counted as 'unclassified' (never guessed) and excluded from the M/F percentages. Binary M/F only — non-binary/trans audiences are not distinguished.",
-        topClassifiedNames: classified
-          .filter((c) => c.probability >= 0.85)
-          .slice(0, 8)
-          .map((c) => ({
-            name: c.name,
-            gender: c.gender,
-            probability: c.probability,
-          })),
+        malePct: audience.malePct,
+        femalePct: audience.femalePct,
+        nonbinaryPct: audience.nonbinaryPct,
+        unknownPct: audience.unknownPct,
+        ageBrackets: audience.ageBrackets,
+        sampleSize: audience.sampleSize,
+        profilesFetched: audience.profilesFetched,
+        confidence: audience.confidence,
+        signalsUsed: audience.signalsUsed,
+        faceAnalyzer: audience.faceAnalyzer,
+        profileCompletenessPct: audience.profileCompletenessPct,
+        source: "commenters",
+        methodology: METHODOLOGY,
+        caveat: isYouTube ? YT_CAVEAT : undefined,
       },
       locked: {},
       generatedAt: new Date().toISOString(),
     };
   },
 };
+
+const METHODOLOGY =
+  "We sample recent commenters, fetch each one's public profile, then combine three signals: (1) bio-text pronouns and self-descriptors (strongest — self-declared), (2) profile-picture demographic estimate when a face API is configured (aggregate only, never per-person), and (3) first-name dictionary lookup. Results are aggregate percentages — we never expose per-individual demographics. Sample capped at 25 profiles per scan to keep provider costs reasonable; cached 48h so re-scans of the same handle are near-zero cost.";
+
+const YT_CAVEAT =
+  "⚠️ Tentative on YouTube — YouTube Data API does NOT expose subscriber lists (only channel owners see demographics in Studio). We sample from recent commenters, which skews slightly toward the more engaged / opinionated slice of your audience. Treat as directional, not exact.";

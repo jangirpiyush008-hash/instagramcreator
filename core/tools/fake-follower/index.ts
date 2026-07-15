@@ -1,8 +1,14 @@
 import type { SocialTool } from "../types";
+import { enrichCommentAudience } from "@/core/data/audience-enrichment";
 
 // Real signals for follower quality — no third-party audit API needed. All
 // derived from public engagement + follow ratios. Heuristic, not a bot-scan,
 // but honest and reproducible from the numbers we already show.
+//
+// v2 signal: audience-profile completeness. Real audiences have bios and
+// custom avatars; bought-follower audiences skew heavily toward empty
+// bios + default avatars. We reuse the same enrichment pipeline as
+// gender-split (sample commenter profiles, count how many are populated).
 //
 //   - engagement rate (ER) is the strongest tell: 0.3% ER on a 1M account
 //     means either bought followers or a dead audience.
@@ -30,6 +36,28 @@ export const fakeFollower: SocialTool = {
     const profile = await data.getProfile(platform, handle);
     const posts = await data.getRecentPosts(platform, handle, 12);
     const isYouTube = platform === "youtube";
+
+    // v2: audience-profile completeness. Fetch a small sample of commenter
+    // profiles and measure how many have bios + custom avatars. Bought-
+    // follower networks skew heavily toward empty profiles. Best-effort —
+    // failure never breaks the tool.
+    let audienceCompletenessPct: number | null = null;
+    let audienceSampleSize = 0;
+    try {
+      const commentsResult = await data.getRecentComments(platform, handle, 100);
+      if (commentsResult.comments.length > 0) {
+        // Cap the enrichment cost hard here — this is a secondary signal.
+        // Skip face analysis (bio + name-only) to stay cheap.
+        const aud = await enrichCommentAudience(platform, data, commentsResult.comments, {
+          maxProfiles: 15,
+          runFaceAnalysis: false,
+        });
+        audienceSampleSize = aud.profilesFetched;
+        audienceCompletenessPct = aud.profileCompletenessPct;
+      }
+    } catch (e) {
+      console.warn("[fake-follower] audience enrichment failed:", e instanceof Error ? e.message : e);
+    }
 
     // YouTube-specific caveats:
     //   • YT Data API always returns following=0 (Google doesn't expose the
@@ -137,6 +165,26 @@ export const fakeFollower: SocialTool = {
       }
     }
 
+    // Audience-profile completeness signal (v2). Real audiences: 60-90%
+    // completeness (bio + custom avatar). Bot-heavy audiences: <30%.
+    if (audienceCompletenessPct !== null && audienceSampleSize >= 5) {
+      if (audienceCompletenessPct < 25) {
+        quality -= 18;
+        reasons.push({
+          flag: "Empty-profile audience",
+          note: `Only ${audienceCompletenessPct.toFixed(0)}% of ${audienceSampleSize} sampled commenters have both a bio AND a custom avatar. Real audiences sit at 60-90%. Strong bot indicator.`,
+          delta: -18,
+        });
+      } else if (audienceCompletenessPct < 45) {
+        quality -= 8;
+        reasons.push({
+          flag: "Low audience profile completeness",
+          note: `${audienceCompletenessPct.toFixed(0)}% of ${audienceSampleSize} sampled commenters have bio+avatar (healthy: 60%+). Mild bot signal.`,
+          delta: -8,
+        });
+      }
+    }
+
     quality = clamp(quality, 25, 99);
     // Split the "not real" remainder between inactive and bots — very-low ER
     // shifts the balance toward inactive (dead followers) rather than bots.
@@ -158,10 +206,12 @@ export const fakeFollower: SocialTool = {
         following,
         postsAnalyzed: posts.length,
         reasons,
+        audienceCompletenessPct,
+        audienceSampleSize,
         ...(ytNote ? { caveat: ytNote } : {}),
         methodology:
           (ytNote ? ytNote + " " : "") +
-          "Heuristic from public engagement + follow ratios. Not a third-party bot scan — signal, not certainty.",
+          "Heuristic from public engagement + follow ratios + sampled audience-profile completeness (bio + custom avatar rate across 15 recent commenters). Not a third-party bot scan — signal, not certainty.",
       },
       locked: {},
       generatedAt: new Date().toISOString(),
