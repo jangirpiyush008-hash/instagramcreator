@@ -59,11 +59,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <span className="h-7 w-7 rounded-lg bg-gradient-ig" aria-hidden />
                 <span>DecodeCreator</span>
               </Link>
-              <nav className="text-sm flex items-center gap-3 sm:gap-4">
-                <Link href="/pricing" className="text-muted-foreground hover:text-foreground transition-colors hidden sm:inline">
+              <nav className="text-sm flex items-center gap-2 sm:gap-3">
+                {/*
+                  Nav links use font-medium + darker text-foreground/80 (instead
+                  of text-muted-foreground) so they read as proper CTAs, not
+                  incidental helper links. The API link is auth-gated — it
+                  bounces through /developer which redirects to sign-in when
+                  the user isn't authenticated.
+                */}
+                <Link
+                  href="/pricing"
+                  className="text-foreground/80 hover:text-foreground font-medium px-3 py-1.5 rounded-full hover:bg-muted/60 transition-colors hidden sm:inline-block"
+                >
                   Pricing
                 </Link>
-                <Link href="/docs" className="text-muted-foreground hover:text-foreground transition-colors hidden sm:inline">
+                <Link
+                  href="/developer"
+                  className="text-foreground/80 hover:text-foreground font-medium px-3 py-1.5 rounded-full hover:bg-muted/60 transition-colors hidden sm:inline-block"
+                >
                   API
                 </Link>
                 {/*
@@ -72,12 +85,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <body>) picks up the param and renders. /login and /signup
                   URLs still work as fallbacks for direct visits or emails.
                 */}
-                <Link href="?auth=signin" className="text-muted-foreground hover:text-foreground transition-colors">
+                <Link
+                  href="?auth=signin"
+                  className="text-foreground/80 hover:text-foreground font-medium px-3 py-1.5 rounded-full hover:bg-muted/60 transition-colors"
+                >
                   Sign in
                 </Link>
                 <Link
                   href="?auth=signup"
-                  className="rounded-full bg-gradient-ig text-white px-4 py-1.5 font-medium hover:brightness-110 transition"
+                  className="rounded-full bg-gradient-ig text-white px-4 py-1.5 font-semibold hover:brightness-110 transition shadow-md shadow-primary/20"
                 >
                   Start Trial
                 </Link>

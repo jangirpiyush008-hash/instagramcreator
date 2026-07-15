@@ -31,10 +31,8 @@ const TOOL_META: ToolMeta[] = TOOLS.map((t) => ({
 export default function HomePage() {
   return (
     <>
-      <AnnouncementBar />
-
       {/* HERO */}
-      <section className="container pt-10 sm:pt-16 pb-8">
+      <section className="container pt-14 sm:pt-20 pb-10">
         <div className="max-w-4xl mx-auto text-center space-y-6">
           <div className="flex flex-wrap gap-2 justify-center">
             <Chip color="primary">✨ New: Face + bio audience demographics</Chip>
@@ -47,7 +45,7 @@ export default function HomePage() {
             <span className="block">Analytics Tool in 2026</span>
           </h1>
 
-          <p className="text-muted-foreground text-lg sm:text-xl max-w-2xl mx-auto">
+          <p className="text-foreground/70 text-lg sm:text-xl max-w-2xl mx-auto">
             Engagement, audience demographics, fake-follower share, earnings — for any public
             Instagram, TikTok or YouTube account. Public data only, no login required.
           </p>
@@ -60,18 +58,18 @@ export default function HomePage() {
           <div className="flex flex-wrap gap-3 justify-center mt-6">
             <Link
               href="?auth=signup"
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-ig text-white px-6 py-3 text-sm font-medium hover:brightness-110 transition shadow-lg shadow-primary/20"
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-ig text-white px-6 py-3 text-sm font-semibold hover:brightness-110 transition shadow-lg shadow-primary/20"
             >
               Start Free Trial <span aria-hidden>→</span>
             </Link>
             <Link
               href="/pricing"
-              className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-6 py-3 text-sm font-medium hover:border-primary/60 transition"
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-card/80 px-6 py-3 text-sm font-medium hover:border-primary/60 transition"
             >
               View Pricing
             </Link>
           </div>
-          <p className="text-center text-xs text-muted-foreground mt-4">
+          <p className="text-center text-xs text-foreground/60 mt-4">
             {ANON_LIMITS.scansPerDay} free scans a day · no card required
           </p>
         </div>
@@ -88,16 +86,16 @@ export default function HomePage() {
       </section>
 
       {/* TOOLS */}
-      <section className="container py-12" id="tools">
+      <section className="container py-14" id="tools">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-3 py-1 text-xs uppercase tracking-wider text-muted-foreground mb-4">
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-3 py-1 text-xs uppercase tracking-wider text-foreground/70 mb-4">
             <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
             {TOOL_META.length} tools · Instagram · TikTok · YouTube
           </div>
-          <h2 className="text-2xl sm:text-4xl font-semibold tracking-tight">
+          <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight">
             Every creator insight, one search
           </h2>
-          <p className="text-muted-foreground mt-3 max-w-xl mx-auto">
+          <p className="text-foreground/70 mt-3 max-w-xl mx-auto">
             Real public data — engagement, growth, audience, downloads. No signup to try.
           </p>
         </div>
@@ -108,67 +106,202 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* VALUE PROP */}
+      {/* FEATURES */}
+      <section className="container py-16" id="features">
+        <div className="text-center mb-10">
+          <div className="text-xs uppercase tracking-wider text-primary font-semibold mb-3">Features</div>
+          <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight max-w-2xl mx-auto">
+            Everything you need to analyze public creator data
+          </h2>
+          <p className="text-foreground/70 mt-3 max-w-xl mx-auto">
+            Simple, powerful tools designed for scale. No complex setup required.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl mx-auto">
+          <FeatureCard
+            icon="⚡"
+            title="Real-time data"
+            body="Live data straight from Instagram, TikTok and YouTube. No stale cache, no synthetic fallbacks."
+          />
+          <FeatureCard
+            icon="🚀"
+            title="Lightning fast"
+            body="Median response under 2 seconds. Cache-shared primitives keep repeat scans near-instant."
+          />
+          <FeatureCard
+            icon="🔓"
+            title="Fair per-credit pricing"
+            body="Pay only for what you fetch. Failed scans are refunded automatically."
+          />
+          <FeatureCard
+            icon="🛡️"
+            title="99.9% uptime"
+            body="Multi-provider fallback per platform. When one provider throttles, we route around it."
+          />
+          <FeatureCard
+            icon="🔌"
+            title="Easy integration"
+            body="One REST endpoint per tool. Same shape across IG/TikTok/YouTube. cURL, Node, Python — all supported."
+          />
+          <FeatureCard
+            icon="✉️"
+            title="Human support"
+            body="Email support on every plan. Pro and above get priority with a 24-hour SLA."
+          />
+        </div>
+      </section>
+
+      {/* HOW IT WORKS */}
       <section className="container py-16">
+        <div className="text-center mb-10">
+          <div className="text-xs uppercase tracking-wider text-primary font-semibold mb-3">How it works</div>
+          <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight">
+            Get started in 3 simple steps
+          </h2>
+        </div>
+        <div className="grid md:grid-cols-3 gap-4 max-w-5xl mx-auto">
+          <Step
+            n="01"
+            title="Sign up free"
+            body="Create an account with email or Google. 20 free scans a month, no card required."
+          />
+          <Step
+            n="02"
+            title="Run your first scan"
+            body="Pick a tool, enter any public handle, hit fetch. Results in seconds."
+          />
+          <Step
+            n="03"
+            title="Scale on paid plans"
+            body="Upgrade when you outgrow the free tier. Starter is ₹599/mo for 150 scans + all 12 tools."
+          />
+        </div>
+      </section>
+
+      {/* USE CASES */}
+      <section className="container py-16">
+        <div className="text-center mb-10">
+          <div className="text-xs uppercase tracking-wider text-primary font-semibold mb-3">Use cases</div>
+          <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight">
+            Built for modern creator-economy teams
+          </h2>
+          <p className="text-foreground/70 mt-3 max-w-xl mx-auto">
+            Powering data-driven decisions across creator marketing, brand deals, and social listening.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-4 max-w-5xl mx-auto">
+          <UseCase
+            emoji="🎯"
+            title="Influencer marketing"
+            body="Vet creators before signing a brand deal. Check engagement quality, fake-follower share, and audience demographics in one call."
+          />
+          <UseCase
+            emoji="📊"
+            title="Market research"
+            body="Track competitor creator strategies, hashtag performance, and audience trends across every platform in one workspace."
+          />
+          <UseCase
+            emoji="🛒"
+            title="E-commerce & D2C brands"
+            body="Find product-mention posts, identify potential brand ambassadors, and monitor customer sentiment on public creator posts."
+          />
+          <UseCase
+            emoji="👂"
+            title="Social listening"
+            body="Track hashtags, monitor mentions, and watch trending conversations relevant to your brand — no platform APIs required."
+          />
+        </div>
+      </section>
+
+      {/* VALUE PROP RECAP */}
+      <section className="container py-14">
         <div className="max-w-4xl mx-auto grid sm:grid-cols-3 gap-4 text-sm">
           <ValueCard
             title="Free to try"
-            body={`${ANON_LIMITS.scansPerDay} scans a day, no signup. Sign up free for 20 scans a month across 4 tools.`}
+            body={`${ANON_LIMITS.scansPerDay} scans a day with no signup. 20 scans/mo across 4 tools once you sign up.`}
           />
           <ValueCard
             title="No notification"
-            body="Public data only. The account you scan is never notified — nothing follows or DMs them."
+            body="Public data only. The scanned account is never notified — nothing follows or DMs them."
           />
           <ValueCard
             title="Grow with a plan"
             body="Starter ₹599/mo unlocks all 12 tools. Pro & Scale add bundled full-reports and priority support."
           />
         </div>
-        <div className="text-center mt-8">
-          <Link
-            href="/pricing"
-            className="inline-block rounded-md bg-gradient-ig text-white px-5 py-2.5 text-sm font-medium hover:brightness-110 transition"
-          >
-            See pricing →
-          </Link>
+      </section>
+
+      {/* CTA */}
+      <section className="container py-20">
+        <div className="rounded-3xl border border-border bg-card/70 p-10 sm:p-16 text-center max-w-4xl mx-auto relative overflow-hidden">
+          <div
+            aria-hidden
+            className="absolute -inset-1 opacity-30 pointer-events-none"
+            style={{
+              background:
+                "radial-gradient(600px 300px at 50% 0%, hsl(322 95% 60% / 0.35), transparent 70%)",
+            }}
+          />
+          <div className="relative">
+            <h2 className="text-3xl sm:text-5xl font-bold tracking-tight">
+              Ready to analyze creator data at scale?
+            </h2>
+            <p className="text-foreground/70 mt-4 max-w-xl mx-auto">
+              Start your free trial today. No credit card required.
+            </p>
+            <div className="flex flex-wrap gap-3 justify-center mt-8">
+              <Link
+                href="?auth=signup"
+                className="inline-flex items-center gap-2 rounded-full bg-gradient-ig text-white px-7 py-3.5 text-sm font-semibold hover:brightness-110 transition shadow-lg shadow-primary/25"
+              >
+                Start Free Trial <span aria-hidden>→</span>
+              </Link>
+              <a
+                href="mailto:support.decodecreator@gmail.com"
+                className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-7 py-3.5 text-sm font-medium hover:border-primary/60 transition"
+              >
+                Talk to sales
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* CONTACT */}
+      <section className="container pb-24" id="contact">
+        <div className="text-center mb-8">
+          <div className="text-xs uppercase tracking-wider text-primary font-semibold mb-3">Contact</div>
+          <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight">Let&apos;s talk</h2>
+          <p className="text-foreground/70 mt-3 max-w-xl mx-auto">
+            Questions, enterprise volume, or partnership? We reply within 3 business days.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-4 max-w-3xl mx-auto">
+          <ContactCard
+            emoji="📧"
+            title="Email us"
+            body="For general inquiries, billing, and support."
+            action="support.decodecreator@gmail.com"
+            href="mailto:support.decodecreator@gmail.com"
+          />
+          <ContactCard
+            emoji="🏢"
+            title="Enterprise volume"
+            body="Custom credit allowances, invoicing, and SLAs for teams above 2,500 scans/mo."
+            action="Talk to sales →"
+            href="mailto:support.decodecreator@gmail.com?subject=Enterprise%20inquiry"
+          />
         </div>
       </section>
     </>
   );
 }
 
-// ── Announcement bar ─────────────────────────────────────────────────────
-// Slim strip above the header. Kept as a server component + static content
-// (no dismiss button yet — add localStorage-backed hide later if needed).
-function AnnouncementBar() {
-  return (
-    <div className="w-full bg-gradient-ig text-white text-sm">
-      <div className="container py-2 flex items-center justify-center gap-2 flex-wrap">
-        <span>🚀 API is live</span>
-        <span aria-hidden className="opacity-70">·</span>
-        <span>3,000 free credits for developers</span>
-        <Link
-          href="/docs"
-          className="underline underline-offset-2 font-medium hover:brightness-110"
-        >
-          Get your key →
-        </Link>
-      </div>
-    </div>
-  );
-}
-
-// ── Trust chip (green-dot pill like GramScraper) ─────────────────────────
-function Chip({
-  children,
-  color,
-}: {
-  children: React.ReactNode;
-  color: "emerald" | "primary";
-}) {
+// ── Trust chip ───────────────────────────────────────────────────────────
+function Chip({ children, color }: { children: React.ReactNode; color: "emerald" | "primary" }) {
   const dotClass = color === "emerald" ? "bg-emerald-500" : "bg-primary";
   return (
-    <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card/80 px-3 py-1 text-xs text-muted-foreground">
+    <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card/80 px-3 py-1 text-xs text-foreground/75">
       <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
       {children}
     </span>
@@ -180,51 +313,116 @@ function Kpi({ value, label }: { value: string; label: string }) {
   return (
     <div className="text-center rounded-xl border border-border bg-card/70 px-4 py-5">
       <div className="text-3xl sm:text-4xl font-bold gradient-text-ig tabular-nums">{value}</div>
-      <div className="text-xs uppercase tracking-wider text-muted-foreground mt-1">{label}</div>
+      <div className="text-xs uppercase tracking-wider text-foreground/60 mt-1">{label}</div>
     </div>
   );
 }
 
-// ── Tool card (kept from earlier commit, now theme-aware via tokens) ─────
+// ── Tool card — tightened per feedback (shorter description, no hover teaser) ──
 function ToolCard({ tool }: { tool: ToolMeta }) {
   const demoPlatform = tool.platforms.includes("instagram") ? "instagram" : "tiktok";
   const demoHandle = "creator";
   const href = `/${demoPlatform}/${demoHandle}/${tool.slug}`;
+  // Shorter teaser than before — user asked for minimum content per card,
+  // just enough for the reader to know what the tool does at a glance.
   const teaser =
-    tool.blurb.length > 90 ? tool.blurb.slice(0, 87).trimEnd() + "…" : tool.blurb;
+    tool.blurb.length > 60 ? tool.blurb.slice(0, 57).trimEnd() + "…" : tool.blurb;
   return (
     <Link
       href={href}
-      className="group rounded-xl border border-border bg-card/60 p-5 transition-all hover:border-primary/50 hover:bg-card hover:-translate-y-0.5 block relative"
+      className="group rounded-xl border border-border bg-card/70 p-5 transition-all hover:border-primary/60 hover:bg-card hover:-translate-y-0.5 block relative"
     >
       {tool.anonAllowed && (
         <span
-          className="absolute top-3 right-3 text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400"
+          className="absolute top-3 right-3 text-[10px] uppercase tracking-wider font-medium text-emerald-600 dark:text-emerald-400"
           title="Try without signing in"
         >
           Free preview
         </span>
       )}
-      <div className="text-xs uppercase tracking-wider text-muted-foreground">
+      <div className="text-xs uppercase tracking-wider text-foreground/60 font-medium">
         {tool.name}
       </div>
-      <div className="mt-2 font-medium text-lg leading-snug">
+      <div className="mt-1.5 font-semibold text-base leading-snug">
         {tool.intentLabel}
       </div>
-      <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{teaser}</p>
-      <div className="mt-3 text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-        Try it →
-      </div>
+      <p className="text-xs text-foreground/60 mt-1.5">{teaser}</p>
     </Link>
   );
 }
 
-// ── Value card ────────────────────────────────────────────────────────────
+// ── Feature tile ─────────────────────────────────────────────────────────
+function FeatureCard({ icon, title, body }: { icon: string; title: string; body: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-card/60 p-5">
+      <div className="text-2xl">{icon}</div>
+      <h3 className="font-semibold mt-3">{title}</h3>
+      <p className="text-sm text-foreground/70 mt-2 leading-relaxed">{body}</p>
+    </div>
+  );
+}
+
+// ── Numbered step ────────────────────────────────────────────────────────
+function Step({ n, title, body }: { n: string; title: string; body: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-card/60 p-6">
+      <div className="text-3xl font-bold gradient-text-ig">{n}</div>
+      <h3 className="font-semibold mt-3">{title}</h3>
+      <p className="text-sm text-foreground/70 mt-2 leading-relaxed">{body}</p>
+    </div>
+  );
+}
+
+// ── Use-case tile ────────────────────────────────────────────────────────
+function UseCase({ emoji, title, body }: { emoji: string; title: string; body: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-card/60 p-6 flex gap-4">
+      <div className="text-3xl shrink-0" aria-hidden>
+        {emoji}
+      </div>
+      <div>
+        <h3 className="font-semibold">{title}</h3>
+        <p className="text-sm text-foreground/70 mt-2 leading-relaxed">{body}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Value card (kept simple) ─────────────────────────────────────────────
 function ValueCard({ title, body }: { title: string; body: string }) {
   return (
     <div className="rounded-xl border border-border bg-card/60 p-5">
-      <h3 className="font-medium">{title}</h3>
-      <p className="text-muted-foreground mt-1">{body}</p>
+      <h3 className="font-semibold">{title}</h3>
+      <p className="text-foreground/70 mt-1 text-sm leading-relaxed">{body}</p>
     </div>
+  );
+}
+
+// ── Contact tile ─────────────────────────────────────────────────────────
+function ContactCard({
+  emoji,
+  title,
+  body,
+  action,
+  href,
+}: {
+  emoji: string;
+  title: string;
+  body: string;
+  action: string;
+  href: string;
+}) {
+  return (
+    <a
+      href={href}
+      className="rounded-xl border border-border bg-card/60 p-6 hover:border-primary/60 transition-colors block"
+    >
+      <div className="text-3xl" aria-hidden>
+        {emoji}
+      </div>
+      <h3 className="font-semibold mt-3">{title}</h3>
+      <p className="text-sm text-foreground/70 mt-2 leading-relaxed">{body}</p>
+      <div className="text-sm text-primary mt-3 font-medium">{action}</div>
+    </a>
   );
 }
