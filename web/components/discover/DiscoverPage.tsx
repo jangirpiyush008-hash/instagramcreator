@@ -139,33 +139,51 @@ export function DiscoverPage({ initialPlatform, isSignedIn }: Props) {
   // Apply client-side refinements (location, language, sort) on top of
   // whatever the server returned. Recomputed on every state change,
   // no re-fetch.
-  const displayed = useMemo(() => {
+  //
+  // Filters are SOFT — if location/language would return 0 hits, we
+  // fall back to the unfiltered set with a banner explaining why.
+  // Better UX than dead-ending the user, and honest about the
+  // limitation (bio-signal filters miss creators who don't mention
+  // location/language in their profile). Verified filter stays hard
+  // since is_verified is real provider data.
+  const { displayed, softFallback } = useMemo(() => {
     const locOpt = LOCATION_OPTS.find((o) => o.id === locationId);
     const langOpt = LANGUAGE_OPTS.find((o) => o.id === languageId);
 
-    let out = results;
+    const applySort = (list: DiscoveryHit[]) => {
+      const out = [...list];
+      if (sortId === "followers_desc") out.sort((a, b) => b.followers - a.followers);
+      else if (sortId === "followers_asc") out.sort((a, b) => a.followers - b.followers);
+      else if (sortId === "er_desc") out.sort((a, b) => (b.engagementRate ?? 0) - (a.engagementRate ?? 0));
+      else if (sortId === "verified_first") {
+        out.sort((a, b) => {
+          if (a.isVerified === b.isVerified) return b.followers - a.followers;
+          return a.isVerified ? -1 : 1;
+        });
+      }
+      return out;
+    };
+
+    // Start from raw results, apply verified filter (hard).
+    let base = results;
+    if (verifiedOnly) base = base.filter((h) => h.isVerified);
+
+    // Apply soft filters (location + language). If they'd cut everything,
+    // fall back to `base` and flag the softFallback state so the UI can
+    // show a "filter matched 0, showing all" banner.
+    let refined = base;
     if (locOpt?.test) {
-      out = out.filter((h) => locOpt.test!(`${h.bio ?? ""} ${h.displayName ?? ""}`));
+      refined = refined.filter((h) => locOpt.test!(`${h.bio ?? ""} ${h.displayName ?? ""}`));
     }
     if (langOpt?.test) {
-      out = out.filter((h) => langOpt.test!(`${h.bio ?? ""} ${h.displayName ?? ""}`));
-    }
-    if (verifiedOnly) {
-      out = out.filter((h) => h.isVerified);
+      refined = refined.filter((h) => langOpt.test!(`${h.bio ?? ""} ${h.displayName ?? ""}`));
     }
 
-    // Sort — mutate a copy.
-    out = [...out];
-    if (sortId === "followers_desc") out.sort((a, b) => b.followers - a.followers);
-    else if (sortId === "followers_asc") out.sort((a, b) => a.followers - b.followers);
-    else if (sortId === "er_desc") out.sort((a, b) => (b.engagementRate ?? 0) - (a.engagementRate ?? 0));
-    else if (sortId === "verified_first") {
-      out.sort((a, b) => {
-        if (a.isVerified === b.isVerified) return b.followers - a.followers;
-        return a.isVerified ? -1 : 1;
-      });
+    const softActive = locOpt?.test != null || langOpt?.test != null;
+    if (softActive && refined.length === 0 && base.length > 0) {
+      return { displayed: applySort(base), softFallback: true };
     }
-    return out;
+    return { displayed: applySort(refined), softFallback: false };
   }, [results, locationId, languageId, sortId, verifiedOnly]);
 
   const saveCreator = async (hit: DiscoveryHit) => {
@@ -362,12 +380,26 @@ export function DiscoverPage({ initialPlatform, isSignedIn }: Props) {
         </label>
       </div>
 
-      {(locationId !== "any" || languageId !== "any") && (
+      {(locationId !== "any" || languageId !== "any") && !softFallback && (
         <div className="text-[11px] text-muted-foreground mb-3 px-1">
           🧪 Location/language filters match on bio text signals (flag
           emoji, country name, script). Creators who don&apos;t mention
           it in their bio may be skipped. Full location + language
           matching lands with the Modash-parity index (Pro upgrade).
+        </div>
+      )}
+
+      {softFallback && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-foreground/80 mb-3 flex items-start gap-2">
+          <span aria-hidden>⚠️</span>
+          <div>
+            Your <b>location / language</b> filters didn&apos;t match
+            any creator&apos;s bio for this search — showing all results
+            instead. Bio-based filtering is best-effort;{" "}
+            {PLATFORM_CFG[platform].label} creators often don&apos;t
+            include location or language markers in their profile.
+            Refine the keyword or platform for a tighter set.
+          </div>
         </div>
       )}
 
