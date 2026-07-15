@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ScanForm } from "@/web/components/ScanForm";
+import { EngagementCalculator } from "@/web/components/EngagementCalculator";
 import { TOOLS } from "@/core/tools/registry";
 import { ANON_LIMITS } from "@/core/billing/tiers";
 import type { Platform } from "@/core/types";
@@ -320,6 +321,13 @@ export default function HomePage() {
             q="Where does DecodeCreator get its data?"
             a="Licensed data-provider APIs: HikerAPI for Instagram, tikwm for TikTok, YouTube Data API v3 for YouTube. All calls hit public endpoints only. We never accept login credentials for third-party platforms and never store session cookies."
           />
+        </div>
+      </section>
+
+      {/* ER CALCULATOR — free tool, placed before final CTA per request */}
+      <section className="container py-16" id="engagement-calculator">
+        <div className="max-w-5xl mx-auto">
+          <EngagementCalculator />
         </div>
       </section>
 

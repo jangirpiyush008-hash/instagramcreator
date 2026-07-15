@@ -365,6 +365,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   the user isn't authenticated.
                 */}
                 <Link
+                  href="/discover"
+                  className="text-foreground/80 hover:text-foreground font-medium px-3 py-1.5 rounded-full hover:bg-muted/60 transition-colors hidden sm:inline-block"
+                >
+                  Discover
+                </Link>
+                <Link
                   href="/pricing"
                   className="text-foreground/80 hover:text-foreground font-medium px-3 py-1.5 rounded-full hover:bg-muted/60 transition-colors hidden sm:inline-block"
                 >

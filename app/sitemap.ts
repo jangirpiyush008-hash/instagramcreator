@@ -32,6 +32,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   // Top-level static pages
   const staticPages: { path: string; priority: number; changeFrequency: "daily" | "weekly" | "monthly" }[] = [
     { path: "/", priority: 1.0, changeFrequency: "daily" },
+    { path: "/discover", priority: 0.95, changeFrequency: "daily" },
     { path: "/pricing", priority: 0.9, changeFrequency: "weekly" },
     { path: "/developer", priority: 0.9, changeFrequency: "weekly" },
     { path: "/docs", priority: 0.8, changeFrequency: "weekly" },
