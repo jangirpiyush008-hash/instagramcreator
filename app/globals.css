@@ -2,9 +2,45 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme tokens
+   ---------------------------------------------------------------------
+   :root       = LIGHT theme (default) — clean warm-white surface,
+                 near-black text, subtle borders, saturated primary.
+   :root.dark  = DARK theme (opt-in via ThemeToggle) — the deep-purple
+                 gradient look the site was born with.
+   Both share the same platform brand gradients (--ig-*, --tt-*, --yt-*)
+   because those need to feel like Instagram/TikTok/YouTube regardless
+   of the surrounding page. */
+
 @layer base {
   :root {
-    /* dark by default — IG/TikTok/YT all live on dark surfaces */
+    --background: 0 0% 98%;
+    --foreground: 240 10% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 12%;
+    --muted: 240 8% 96%;
+    --muted-foreground: 240 6% 42%;
+    --border: 240 8% 90%;
+    --input: 0 0% 100%;
+    --ring: 322 95% 55%;
+    --primary: 322 95% 55%;             /* IG pink — slightly darker on light */
+    --primary-foreground: 0 0% 100%;
+    --accent: 187 95% 40%;              /* TikTok cyan — darker on light for contrast */
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 75% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --radius: 1rem;
+
+    /* platform brand gradients — same on both themes */
+    --ig-from: 30 100% 60%;
+    --ig-via: 322 95% 60%;
+    --ig-to: 268 84% 55%;
+    --tt-from: 187 95% 50%;
+    --tt-to: 348 100% 58%;
+    --yt-base: 0 100% 50%;
+  }
+
+  :root.dark {
     --background: 240 14% 4%;
     --foreground: 0 0% 100%;
     --card: 240 12% 7%;
@@ -14,35 +50,38 @@
     --border: 240 8% 16%;
     --input: 240 8% 13%;
     --ring: 322 95% 64%;
-    --primary: 322 95% 64%;             /* IG pink */
+    --primary: 322 95% 64%;
     --primary-foreground: 0 0% 100%;
-    --accent: 187 95% 50%;              /* TikTok cyan */
+    --accent: 187 95% 50%;
     --accent-foreground: 240 14% 4%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --radius: 1rem;
-
-    /* platform brand tokens — used by toggles, badges */
-    --ig-from: 30 100% 60%;
-    --ig-via: 322 95% 60%;
-    --ig-to: 268 84% 55%;
-    --tt-from: 187 95% 50%;
-    --tt-to: 348 100% 58%;
-    --yt-base: 0 100% 50%;
   }
 }
 
 @layer base {
   * { @apply border-border; }
-  html { color-scheme: dark; }
+  html { color-scheme: light; }
+  html.dark { color-scheme: dark; }
   body {
     @apply bg-background text-foreground antialiased;
+    font-feature-settings: "ss01", "cv01";
+    background-attachment: fixed;
+  }
+  /* Light-theme body: very subtle warm-white with a faint gradient touch
+     from the brand pink in the top-left corner — grounds the page in
+     brand without shouting. */
+  html:not(.dark) body {
+    background-image:
+      radial-gradient(1000px 500px at 10% -5%, hsl(322 95% 92% / 0.55), transparent 60%),
+      radial-gradient(800px 500px at 100% 0%, hsl(187 95% 90% / 0.35), transparent 60%);
+  }
+  /* Dark-theme body: the deep multi-color glow the site was born with. */
+  html.dark body {
     background-image:
       radial-gradient(1100px 600px at 12% -5%, hsl(322 95% 30% / 0.28), transparent 60%),
       radial-gradient(900px 500px at 100% 0%, hsl(187 95% 40% / 0.18), transparent 60%),
       radial-gradient(800px 500px at 50% 120%, hsl(268 84% 40% / 0.22), transparent 60%);
-    background-attachment: fixed;
-    font-feature-settings: "ss01", "cv01";
   }
 }
 
@@ -88,7 +127,11 @@
     box-shadow: 0 0 0 1px hsl(var(--accent) / 0.7),
                 0 12px 40px -8px hsl(var(--accent) / 0.45);
   }
+  /* .surface is theme-aware — matches whichever body background is active. */
   .surface {
+    background: hsl(var(--card));
+  }
+  html.dark .surface {
     background: linear-gradient(180deg, hsl(240 12% 9%) 0%, hsl(240 14% 6%) 100%);
   }
 }
