@@ -109,6 +109,19 @@ export class CachedAdapter implements DataAdapter {
     return fresh;
   }
 
+  // Optional method — only proxy through if the inner adapter implements
+  // it. Distinct cache key from getProfile because the loose lookup
+  // returns partial data with different semantics.
+  async getCommenterInfo(platform: Platform, username: string) {
+    if (!this.inner.getCommenterInfo) return {};
+    const key = this.key("commenter", platform, username);
+    const hit = await this.read<Awaited<ReturnType<NonNullable<typeof this.inner.getCommenterInfo>>>>(key);
+    if (hit) return hit;
+    const fresh = await this.inner.getCommenterInfo(platform, username);
+    await this.write(key, fresh, TTL_HOURS.profile);
+    return fresh;
+  }
+
   async getRecentPosts(platform: Platform, handle: string, n: number): Promise<Post[]> {
     // Cache-key includes N so different N-requests don't collide. Storage is
     // cheap; the smarter "fetch max, slice down" optimization can come later

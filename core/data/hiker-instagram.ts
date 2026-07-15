@@ -188,6 +188,39 @@ export class HikerInstagramAdapter extends MockProvider {
   // getProfile — response shape CONFIRMED against real API call
   // ---------------------------------------------------------------------------
 
+  // Loose commenter lookup. Same /v2/user/by/username endpoint as
+  // getProfile, but deliberately does NOT throw on private accounts,
+  // deleted accounts, or handle-normalization mismatches. Audience
+  // enrichment wants partial data from as many commenters as possible —
+  // even a private commenter's public avatar + bio is useful signal.
+  // Not `override` — the base MockProvider doesn't declare this optional
+  // interface method. Present on this concrete adapter because we can
+  // actually implement it cheaply via HikerAPI's user-by-username call.
+  async getCommenterInfo(_platform: Platform, username: string) {
+    try {
+      const r = await this.get<{ user?: HikerUserRaw }>(
+        "/v2/user/by/username",
+        { username },
+      );
+      const u = r.user;
+      if (!u) return {};
+      return {
+        fullName: u.full_name,
+        avatarUrl: u.hd_profile_pic_url_info?.url ?? u.profile_pic_url,
+        bio: u.biography,
+        isPrivate: u.is_private === true,
+      };
+    } catch (e) {
+      if (process.env.DEBUG_ENRICHMENT === "1") {
+        console.warn(
+          `[hiker-instagram] commenter lookup failed for ${username}:`,
+          e instanceof Error ? e.message : e,
+        );
+      }
+      return {};
+    }
+  }
+
   override async getProfile(platform: Platform, handle: string): Promise<Profile> {
     return this.safe<Profile>(
       "getProfile",

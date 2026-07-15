@@ -92,20 +92,37 @@ export async function enrichCommentAudience(
   }
   const enrichees = Array.from(seen.values());
 
-  // Fetch full profiles only where we need bio (which no comment API
-  // returns inline). Parallel + best-effort — every failure is silent
-  // and we still have the inline avatarUrl/fullName from the comment.
+  // Fetch commenter info — prefer the LOOSE getCommenterInfo path when
+  // the adapter implements it. That path skips the strict wrong-account
+  // guard AND the PrivateAccountError throw, both of which are correct
+  // for the main scan target but drop 60%+ of commenters when applied to
+  // enrichment. Falls back to getProfile for adapters that haven't
+  // implemented the loose method yet.
   await Promise.all(
     enrichees.map(async (e) => {
+      if (data.getCommenterInfo) {
+        try {
+          const info = await data.getCommenterInfo(platform, e.username);
+          if (info.bio) e.bio = info.bio;
+          if (!e.avatarUrl && info.avatarUrl) e.avatarUrl = info.avatarUrl;
+          if (!e.fullName && info.fullName) e.fullName = info.fullName;
+        } catch (err) {
+          if (process.env.DEBUG_ENRICHMENT === "1") {
+            console.warn(
+              `[enrichment] getCommenterInfo failed for ${e.username}:`,
+              err instanceof Error ? err.message : err,
+            );
+          }
+        }
+        return;
+      }
+      // Legacy fallback for adapters without loose lookup.
       try {
         const p = await data.getProfile(platform, e.username);
         e.bio = p.bio;
-        // Fill any inline gaps from the fresh profile.
         if (!e.avatarUrl) e.avatarUrl = p.avatarUrl;
         if (!e.fullName) e.fullName = p.displayName;
       } catch (err) {
-        // Common — commenter renamed, deleted, or private. Not fatal:
-        // we still have the inline data from the comment.
         if (process.env.DEBUG_ENRICHMENT === "1") {
           console.warn(
             `[enrichment] getProfile failed for ${e.username}:`,

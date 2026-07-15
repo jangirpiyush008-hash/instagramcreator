@@ -135,9 +135,22 @@ export interface FollowerLite {
   fullName?: string;
 }
 
+// Loose commenter info for audience-enrichment. Deliberately partial and
+// deliberately does NOT throw on private accounts, deleted accounts, or
+// username-normalization mismatches — enrichment wants best-effort data
+// from as many commenters as possible. Never used for the main scan target.
+export interface CommenterInfo {
+  fullName?: string;
+  avatarUrl?: string;
+  bio?: string;
+  isPrivate?: boolean;
+}
+
 export interface DataAdapter {
   // Phase 0 baseline
   getProfile(platform: Platform, handle: string): Promise<Profile>;
+  // Optional — enrichment layer falls back to getProfile if unimplemented.
+  getCommenterInfo?(platform: Platform, username: string): Promise<CommenterInfo>;
   getRecentPosts(platform: Platform, handle: string, n: number): Promise<Post[]>;
   // Return up to N followers (single page is fine). Providers page at 50-100
   // per call, so `n` is a target, not a hard promise.
