@@ -105,7 +105,6 @@ export default async function AccountPage({
       )}
 
       <DashboardPanels
-        activeTab={activeTab}
         overview={{
           planLabel: activeSub?.plan ?? "Free",
           activeSub: !!activeSub,

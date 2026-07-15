@@ -1,12 +1,11 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback } from "react";
 import type { Platform } from "@/core/types";
 import { TOOLS } from "@/core/tools/registry";
 import { OverviewPanel } from "./OverviewPanel";
 import { ToolWorkspace } from "./ToolWorkspace";
 import { DeveloperHub } from "@/web/components/developer/DeveloperHub";
+import { useTab } from "./PlatformContext";
 
 // Right-panel router. Reads ?tab= and picks which panel to render.
 // - overview          → OverviewPanel (default landing)
@@ -43,9 +42,12 @@ const TOOL_META: Record<string, ToolMeta> = Object.fromEntries(
 // `overview` accepts only the DATA props of OverviewPanel — never the
 // onOpenTab callback. Callbacks can't cross the server→client boundary in
 // Next.js App Router, so the server passes serializable data only and
-// DashboardPanels wires setTab in below.
+// DashboardPanels wires setTab in below via TabContext.
+//
+// activeTab is intentionally NOT a prop anymore — it comes from
+// TabContext so DashboardShell's client-side tab switch propagates here
+// without a server re-render.
 interface Props {
-  activeTab: string;
   overview: Omit<React.ComponentProps<typeof OverviewPanel>, "onOpenTab">;
   developer: React.ComponentProps<typeof DeveloperHub>;
   subscriptionPanel: React.ReactNode;
@@ -53,25 +55,12 @@ interface Props {
 }
 
 export function DashboardPanels({
-  activeTab,
   overview,
   developer,
   subscriptionPanel,
   watchlistPanel,
 }: Props) {
-  const router = useRouter();
-  const search = useSearchParams();
-
-  // Same setTab pattern as DashboardShell — kept here so OverviewPanel's
-  // "Re-run" clicks can hop straight into a tool workspace.
-  const setTab = useCallback(
-    (tabId: string) => {
-      const p = new URLSearchParams(search.toString());
-      p.set("tab", tabId);
-      router.push(`/account?${p.toString()}`, { scroll: false });
-    },
-    [router, search],
-  );
+  const { activeTab, setTab } = useTab();
 
   if (activeTab === "developer") {
     return <DeveloperHub {...developer} />;

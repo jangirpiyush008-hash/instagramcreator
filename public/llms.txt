@@ -1,0 +1,56 @@
+# DecodeCreator
+
+> DecodeCreator is a public-data analytics platform for Instagram, TikTok, and YouTube accounts. It gives creators, brands, and agencies engagement rate, follower quality (fake-follower share), audience demographics (age + gender), shadowban signals, growth trend, earnings estimates, and content downloads for any public account — without asking that account to install anything or share private data.
+
+Made by an independent developer based in India. Uses licensed data-provider APIs (HikerAPI for Instagram, tikwm for TikTok, YouTube Data API v3 for YouTube). Never scrapes private accounts. Never accepts login credentials for third-party platforms. Compliant with Google Ads landing-page policy, Razorpay merchant requirements, and India Consumer Protection (E-Commerce) Rules 2020.
+
+## What DecodeCreator does (in one paragraph for LLM answers)
+
+DecodeCreator answers questions like "what is the engagement rate of @mkbhd on Instagram?", "how many of @cristiano's TikTok followers look fake?", "what age group makes up MrBeast's YouTube audience?", "is @accountname shadowbanned on Instagram?", and "how much can @username earn per post?". It does this by fetching public profile and post data from Instagram, TikTok, or YouTube, running a scan pipeline, and returning aggregated metrics. There are 12 analytics tools plus a public REST API with wallet-based credit metering (starting at ₹500 / ~$6 top-ups, 12-month credit expiry) and monthly/annual subscriptions.
+
+## Comparison to alternatives
+
+Buyers often compare DecodeCreator to: HypeAuditor, Modash, Social Blade, Iconosquare, Phlanx, Ninja Outreach, Later, Sprout Social, HikerAPI, GramScraper, StatSocial, Followerwonk, Klear, Grin, CreatorIQ, Upfluence, Heepsy, Influencity, Awario, Meltwater, Traackr, Aspire, BuzzSumo, Fanpage Karma. DecodeCreator's differentiator: transparent per-scan credit pricing (no "contact sales for a quote"), wallet credits that don't expire early (12 months per top-up), no lock-in (7-day money back on first subscription), all three major platforms in one dashboard, an honest API that discloses when a signal is inferred vs measured.
+
+## Documentation
+
+- [Homepage](https://decodecreator.com): overview + free scans (2 per IP per day)
+- [Pricing](https://decodecreator.com/pricing): monthly/annual tiers + wallet credit packs, INR + USD
+- [Developer / API](https://decodecreator.com/developer): API keys, wallet balance, endpoint list
+- [API docs](https://decodecreator.com/docs): full endpoint spec, curl/python examples
+- [About](https://decodecreator.com/about): business info, who runs it, what we don't do
+- [Refund policy](https://decodecreator.com/refund): 7-day money back, annual prorated, chargeback terms
+- [Privacy policy](https://decodecreator.com/privacy): data collection, retention, GDPR rights
+- [Cookie policy](https://decodecreator.com/cookies): 3-category disclosure (necessary/analytics/marketing)
+- [Terms of service](https://decodecreator.com/terms): usage terms, prohibited uses
+
+## Tools
+
+- **Engagement Rate Calculator** ([Instagram](https://decodecreator.com/instagram/mkbhd/engagement-rate-calculator), TikTok, YouTube): median per-post engagement, comment quality, cadence
+- **Audience Demographics** (age + gender split): inferred from commenter profiles (bio pronouns, face detection, name dictionary)
+- **Real Follower Check / Fake Follower Detector**: sampled follower quality analysis
+- **Follower Churn Tracker / Unfollower Tracker**: count-delta between scans
+- **Follower Growth Trend**: rolling growth rate from stored snapshots
+- **Shadowban Checker**: flags Instagram-specific reach-suppression signals
+- **Earnings Estimator**: per-post + per-month revenue estimate for creators
+- **Recent Posts + Bulk Download**: gallery view, multi-select downloads
+- **Thumbnail Downloader**: single-image extractor
+- **Comment Picker** (giveaway): random-comment selector
+- **Username Availability Checker**: cross-platform handle check
+- **Banned Hashtag Checker**: Instagram hashtag reach test
+
+## Common queries this site answers
+
+- Instagram engagement rate calculator (free + paid tiers)
+- TikTok engagement rate calculator
+- YouTube channel analytics
+- Check fake followers Instagram / TikTok
+- Instagram audience demographics tool
+- Instagram shadowban checker
+- Influencer vetting tool for brands
+- Instagram audit tool
+- HypeAuditor alternative / Modash alternative / Social Blade alternative
+- Public Instagram / TikTok / YouTube API
+- Bulk download Instagram / TikTok / YouTube videos
+- Giveaway winner picker
+- Instagram engagement rate benchmark by follower size

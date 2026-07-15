@@ -51,8 +51,8 @@ export default function HomePage() {
           </p>
         </div>
 
-        <div className="max-w-2xl mx-auto mt-10">
-          <div className="rounded-2xl surface border border-border p-4 sm:p-6 shadow-2xl shadow-black/10 dark:shadow-black/40">
+        <div className="max-w-4xl mx-auto mt-10 px-2 sm:px-0">
+          <div className="rounded-2xl surface border border-border p-4 sm:p-8 shadow-2xl shadow-black/10 dark:shadow-black/40">
             <ScanForm />
           </div>
           <div className="flex flex-wrap gap-3 justify-center mt-6">
@@ -231,6 +231,98 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* COMPARISON — competitor keyword magnet */}
+      <section className="container py-16" id="alternatives">
+        <div className="text-center mb-10">
+          <div className="text-xs uppercase tracking-wider text-primary font-semibold mb-3">
+            Alternatives comparison
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight max-w-3xl mx-auto">
+            The HypeAuditor, Modash, Iconosquare &amp; Social Blade alternative
+          </h2>
+          <p className="text-foreground/70 mt-3 max-w-2xl mx-auto">
+            Most creator analytics platforms are Instagram-only, cost $99+/month
+            minimum, or hide pricing behind a sales call. DecodeCreator covers
+            all three platforms, starts at zero, and shows the meter on the
+            wall.
+          </p>
+        </div>
+        <div className="max-w-5xl mx-auto overflow-x-auto">
+          <table className="w-full text-sm border border-border/60 rounded-xl overflow-hidden">
+            <thead className="bg-muted/60 text-xs uppercase tracking-wider">
+              <tr>
+                <th className="text-left px-4 py-3 font-semibold">Feature</th>
+                <th className="text-left px-4 py-3 font-semibold">DecodeCreator</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground">HypeAuditor</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Modash</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Iconosquare</th>
+                <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Social Blade</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/40 text-foreground/80">
+              <CompareRow feature="Free tier" us="2 scans/day + 20 free/mo signed in" a="Limited profile only" b="Free trial then paid" c="14-day trial" d="Ads + basic stats" />
+              <CompareRow feature="Starting paid price" us="₹499 / ~$6 per month" a="~$399/mo" b="~$199/mo" c="~$29/mo" d="$3.99/mo (limited)" />
+              <CompareRow feature="Instagram support" us="Full" a="Full" b="Full" c="Full" d="Basic" />
+              <CompareRow feature="TikTok support" us="Full" a="Full" b="Full" c="Limited" d="Basic" />
+              <CompareRow feature="YouTube support" us="Full" a="Full" b="Limited" c="No" d="Full" />
+              <CompareRow feature="Pay-as-you-go API credits" us="Yes, ₹500 min, 12-mo expiry" a="No" b="No" c="No" d="No" />
+              <CompareRow feature="Chargebacks + refund policy" us="7-day money back, published" a="Not published" b="Not published" c="Published" d="N/A" />
+              <CompareRow feature="Requires sales call" us="Never" a="Enterprise tier" b="For Modash Studio" c="For Enterprise" d="No" />
+            </tbody>
+          </table>
+          <p className="text-xs text-muted-foreground mt-4 text-center">
+            Competitor prices from public pricing pages as of{" "}
+            {new Date().getFullYear()}. Not affiliated with any listed vendor.
+          </p>
+        </div>
+      </section>
+
+      {/* FAQ — schema.org FAQPage matches the JSON-LD in layout.tsx */}
+      <section className="container py-16" id="faq">
+        <div className="text-center mb-10">
+          <div className="text-xs uppercase tracking-wider text-primary font-semibold mb-3">
+            Frequently asked questions
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight max-w-2xl mx-auto">
+            Common questions from creators, brands &amp; agencies
+          </h2>
+        </div>
+        <div className="max-w-3xl mx-auto space-y-3">
+          <FaqItem
+            q="Is DecodeCreator free?"
+            a="Yes — every visitor gets 2 free scans per day with no card. Signed-in free users get 20 scans per month. Paid tiers start at ₹499/month (~$6/month) and unlock all 12 tools + higher quotas. The API is credit-based, with a ₹500 minimum top-up, and credits are valid for 12 months per lot."
+          />
+          <FaqItem
+            q="How is DecodeCreator different from HypeAuditor, Modash, or Social Blade?"
+            a="Three differences: (1) transparent per-scan credit pricing — no 'contact sales for a quote'; (2) wallet credits valid for 12 months with no early expiry; (3) Instagram + TikTok + YouTube in one dashboard, not just Instagram. Where a metric is inferred rather than measured, we say so — no 'AI-powered' claims where a heuristic is doing the work."
+          />
+          <FaqItem
+            q="Does the scanned account know I'm looking at their profile?"
+            a="No. DecodeCreator only reads public data through licensed provider APIs. Nothing follows, DMs, likes, or leaves any trace on the source account. The scanned user is never notified."
+          />
+          <FaqItem
+            q="Can I check private Instagram or TikTok accounts?"
+            a="No. Private accounts return a 'private' response — we do not attempt to bypass any platform's privacy settings. This is a strict rule; we won't help circumvent an account block."
+          />
+          <FaqItem
+            q="How accurate is the fake-follower check?"
+            a="It's a sampled, signal-based estimate. We look at follower activity patterns, profile completeness, engagement authenticity, and other public signals. Where the estimate is uncertain we say so."
+          />
+          <FaqItem
+            q="Is there a REST API I can integrate?"
+            a="Yes. GET /v1/scan/{platform}/{handle}?tool={toolId} with an x-api-key header. Credits are metered per call and refunded on failure. Full docs at /docs."
+          />
+          <FaqItem
+            q="What's the average Instagram engagement rate in 2026?"
+            a="Rough benchmarks — nano (1K–10K): 4–8%; micro (10K–100K): 2–4%; mid-tier (100K–1M): 1.5–3%; macro (1M+): 0.5–1.5%. Anything above the range for the follower size is strong; anything below is soft. Run our Engagement Rate tool on any handle for a benchmarked reading with median, distribution, and cadence."
+          />
+          <FaqItem
+            q="Where does DecodeCreator get its data?"
+            a="Licensed data-provider APIs: HikerAPI for Instagram, tikwm for TikTok, YouTube Data API v3 for YouTube. All calls hit public endpoints only. We never accept login credentials for third-party platforms and never store session cookies."
+          />
+        </div>
+      </section>
+
       {/* CTA */}
       <section className="container py-20">
         <div className="rounded-3xl border border-border bg-card/70 p-10 sm:p-16 text-center max-w-4xl mx-auto relative overflow-hidden">
@@ -395,6 +487,56 @@ function ValueCard({ title, body }: { title: string; body: string }) {
       <h3 className="font-semibold">{title}</h3>
       <p className="text-foreground/70 mt-1 text-sm leading-relaxed">{body}</p>
     </div>
+  );
+}
+
+// ── Comparison-table row ────────────────────────────────────────────────
+function CompareRow({
+  feature,
+  us,
+  a,
+  b,
+  c,
+  d,
+}: {
+  feature: string;
+  us: string;
+  a: string;
+  b: string;
+  c: string;
+  d: string;
+}) {
+  return (
+    <tr>
+      <td className="px-4 py-3 font-medium text-foreground">{feature}</td>
+      <td className="px-4 py-3 text-foreground bg-primary/5 font-medium">{us}</td>
+      <td className="px-4 py-3 text-muted-foreground">{a}</td>
+      <td className="px-4 py-3 text-muted-foreground">{b}</td>
+      <td className="px-4 py-3 text-muted-foreground">{c}</td>
+      <td className="px-4 py-3 text-muted-foreground">{d}</td>
+    </tr>
+  );
+}
+
+// ── FAQ item ─────────────────────────────────────────────────────────────
+// Native <details> so the SEO crawler + LLM can read every answer even
+// when the panel is closed (no client JS required, no aria plumbing).
+function FaqItem({ q, a }: { q: string; a: string }) {
+  return (
+    <details className="group rounded-xl border border-border bg-card/60 open:bg-card/80">
+      <summary className="cursor-pointer list-none px-5 py-4 font-medium flex items-start justify-between gap-3">
+        <span>{q}</span>
+        <span
+          className="text-muted-foreground group-open:rotate-45 transition-transform text-xl leading-none pt-0.5"
+          aria-hidden
+        >
+          +
+        </span>
+      </summary>
+      <div className="px-5 pb-5 pt-0 text-sm text-foreground/75 leading-relaxed">
+        {a}
+      </div>
+    </details>
   );
 }
 

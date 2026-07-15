@@ -14,9 +14,28 @@ import { PricingClient } from "./PricingClient";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Pricing — DecodeCreator",
+  title:
+    "Pricing — Instagram, TikTok & YouTube Analytics from ₹499/mo | DecodeCreator",
   description:
-    "Simple, transparent pricing. Free tier for consumers, monthly & annual subscriptions from ₹599 / $7, developer API with pay-as-you-go credits.",
+    "Transparent pricing for creator analytics: free tier (20 scans/mo), Starter ₹499/mo, Pro ₹1,499/mo, Scale ₹4,999/mo. Wallet credits from ₹500 with 12-month validity. Cheaper than HypeAuditor, Modash & Iconosquare — same 3-platform coverage.",
+  alternates: { canonical: "https://decodecreator.com/pricing" },
+  openGraph: {
+    title: "DecodeCreator Pricing — Free tier + paid plans from ₹499/mo",
+    description:
+      "Instagram, TikTok & YouTube analytics with transparent per-scan credits, 12-month wallet validity, and 7-day refund guarantee.",
+    url: "https://decodecreator.com/pricing",
+    type: "website",
+  },
+  keywords: [
+    "instagram analytics pricing",
+    "influencer analytics tool cost",
+    "hypeauditor pricing alternative",
+    "modash pricing alternative",
+    "iconosquare pricing",
+    "social blade paid plans",
+    "creator analytics free tier",
+    "cheap instagram audit tool",
+  ],
 };
 
 // Server component. Detects region + user state, hands everything

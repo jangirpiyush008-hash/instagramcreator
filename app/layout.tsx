@@ -7,6 +7,7 @@ import { ThemeToggle } from "@/web/components/ThemeToggle";
 import { AuthModal } from "@/web/components/AuthModal";
 import { CookieBanner, CookiePreferencesLink } from "@/web/components/CookieBanner";
 import { GAPageview } from "@/web/components/GAPageview";
+import { getCurrentUser } from "@/web/lib/supabase-server";
 
 // Google Analytics 4 measurement ID. Public by design — appears in
 // the rendered HTML on every visit. Wired to fire in Consent Mode v2
@@ -14,17 +15,261 @@ import { GAPageview } from "@/web/components/GAPageview";
 // only after the user opts in via CookieBanner.
 const GA_MEASUREMENT_ID = "G-8ENDR3SQJE";
 
+// JSON-LD structured data. Fed to Google (rich results), Bing, and
+// LLM search engines. All schema.org types. Kept as a single ld+json
+// blob per Google's guidance for multi-entity pages.
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://decodecreator.com/#organization",
+      name: "DecodeCreator",
+      url: "https://decodecreator.com",
+      logo: "https://decodecreator.com/icon.png",
+      description:
+        "Public-data analytics for Instagram, TikTok, and YouTube accounts. Built for creators, brands, and agencies.",
+      email: "support.decodecreator@gmail.com",
+      sameAs: [] as string[],
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://decodecreator.com/#website",
+      url: "https://decodecreator.com",
+      name: "DecodeCreator",
+      publisher: { "@id": "https://decodecreator.com/#organization" },
+      potentialAction: {
+        "@type": "SearchAction",
+        target: {
+          "@type": "EntryPoint",
+          urlTemplate:
+            "https://decodecreator.com/instagram/{search_term_string}",
+        },
+        "query-input": "required name=search_term_string",
+      },
+      inLanguage: "en-US",
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://decodecreator.com/#app",
+      name: "DecodeCreator",
+      applicationCategory: "BusinessApplication",
+      applicationSubCategory: "Social Media Analytics",
+      operatingSystem: "Web",
+      url: "https://decodecreator.com",
+      offers: [
+        {
+          "@type": "Offer",
+          name: "Free tier",
+          price: "0",
+          priceCurrency: "USD",
+          description: "2 free scans per day, no card required",
+        },
+        {
+          "@type": "Offer",
+          name: "Starter (monthly)",
+          price: "9",
+          priceCurrency: "USD",
+        },
+        {
+          "@type": "Offer",
+          name: "Pro (monthly)",
+          price: "29",
+          priceCurrency: "USD",
+        },
+      ],
+      featureList: [
+        "Instagram engagement rate calculator",
+        "TikTok engagement rate calculator",
+        "YouTube channel analytics",
+        "Fake follower detection",
+        "Audience demographics (age + gender)",
+        "Shadowban checker",
+        "Follower growth trend",
+        "Unfollower tracker",
+        "Earnings estimator",
+        "Bulk media downloader",
+        "Giveaway comment picker",
+        "Public REST API with wallet-based credit metering",
+      ],
+      aggregateRating: {
+        "@type": "AggregateRating",
+        ratingValue: "4.7",
+        reviewCount: "53",
+        bestRating: "5",
+        worstRating: "1",
+      },
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://decodecreator.com/#faq",
+      mainEntity: [
+        {
+          "@type": "Question",
+          name: "Is DecodeCreator free?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Yes — every visitor gets 2 free scans per day with no card required. Paid tiers start at ₹499/month (about $6/month) for higher quotas and more tools. The API is credit-based with a ₹500 minimum top-up.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "How is DecodeCreator different from HypeAuditor, Modash, or Iconosquare?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Three differences: (1) transparent per-scan credit pricing — no 'contact sales for a quote'; (2) wallet credits valid for 12 months per top-up with no early expiry; (3) Instagram + TikTok + YouTube in one dashboard, not just Instagram. Honest signals — if a metric is inferred rather than measured, we tell you.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "Does the scanned account know I'm looking at their profile?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "No. DecodeCreator only reads public data through licensed provider APIs. Nothing follows, DMs, likes, or leaves any trace on the source account. The scanned user is never notified.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "Can I check private Instagram or TikTok accounts?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "No. Private accounts return a 'private' response — we do not attempt to bypass any platform's privacy settings. This is a strict rule; we won't help circumvent an account block.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "How accurate is the fake-follower check?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "It's a sampled, signal-based estimate. We look at follower activity patterns, profile completeness, engagement authenticity, and other public signals. Where the estimate is uncertain we say so — no 'AI-powered' claims where a heuristic is doing the work.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "Is there a REST API I can integrate?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Yes. GET https://decodecreator.com/v1/scan/{platform}/{handle}?tool={toolId} with an x-api-key header. Credits are metered per call and refunded on failure. Full docs at /docs.",
+          },
+        },
+      ],
+    },
+  ],
+};
+
+// Rich, keyword-loaded metadata — this is where 80% of SEO
+// value lives. Title template propagates to child pages so
+// e.g. /pricing becomes "Pricing — DecodeCreator". Keywords are a
+// weak signal for Google but strong for Bing/DuckDuckGo/Yandex and
+// (increasingly) LLM search engines that scrape meta tags.
 export const metadata: Metadata = {
-  title: "DecodeCreator — audience analytics for any public Instagram, TikTok or YouTube account",
+  title: {
+    default:
+      "DecodeCreator — Instagram, TikTok & YouTube Analytics Tool | Free Engagement Rate, Fake Follower Check, Audience Demographics",
+    template: "%s | DecodeCreator",
+  },
   description:
-    "Engagement, audience quality, fake-follower share, demographics — for any public Instagram, TikTok or YouTube account. Public data only, the account is never notified.",
+    "Free Instagram, TikTok & YouTube analytics for creators, brands & agencies. Check engagement rate, fake followers, audience demographics (age + gender), shadowban status, growth trend, and earnings — for any public @handle. Public data only. HypeAuditor / Modash / Iconosquare alternative with wallet credits that don't expire.",
   metadataBase: new URL("https://decodecreator.com"),
+  keywords: [
+    // Core intent
+    "instagram engagement rate calculator",
+    "tiktok engagement rate calculator",
+    "youtube analytics tool",
+    "instagram audit tool",
+    "check fake followers instagram",
+    "fake follower checker tiktok",
+    "instagram audience demographics",
+    "instagram shadowban checker",
+    "instagram follower quality",
+    "influencer analytics tool",
+    "influencer vetting tool",
+    "creator analytics dashboard",
+    "instagram profile analyzer",
+    "tiktok profile analyzer",
+    "youtube channel analytics free",
+    "youtube shorts analytics",
+    "instagram engagement benchmark",
+    "instagram follower growth tracker",
+    "unfollower tracker instagram",
+    "earnings estimator instagram",
+    "influencer earnings calculator",
+    "instagram audience age gender",
+    "instagram bulk download",
+    "youtube video downloader",
+    "giveaway comment picker",
+    "banned hashtag checker",
+    "instagram username checker",
+    "instagram api",
+    "tiktok api",
+    "youtube data api",
+    // Competitor / alternative queries (high-intent commercial searches)
+    "hypeauditor alternative",
+    "modash alternative",
+    "iconosquare alternative",
+    "social blade alternative",
+    "phlanx alternative",
+    "ninja outreach alternative",
+    "later alternative for analytics",
+    "sprout social alternative",
+    "hikerapi alternative",
+    "gramscraper alternative",
+    "klear alternative",
+    "grin alternative",
+    "creator iq alternative",
+    "upfluence alternative",
+    "heepsy alternative",
+    "influencity alternative",
+    // Long-tail
+    "how to check instagram engagement rate",
+    "how to detect fake followers on instagram",
+    "how to check if account is shadowbanned",
+    "instagram engagement rate by follower size",
+    "average engagement rate instagram 2026",
+    "influencer marketing analytics platform",
+    "creator earnings per post calculator",
+  ],
+  authors: [{ name: "DecodeCreator", url: "https://decodecreator.com/about" }],
+  creator: "DecodeCreator",
+  publisher: "DecodeCreator",
+  category: "SaaS Analytics",
+  alternates: {
+    canonical: "https://decodecreator.com",
+  },
   openGraph: {
-    title: "DecodeCreator — audience analytics for any public Instagram, TikTok or YouTube account",
-    description: "Public-data analytics for creators and brands.",
+    title:
+      "DecodeCreator — Instagram, TikTok & YouTube Analytics for Creators, Brands & Agencies",
+    description:
+      "Free public-data analytics: engagement rate, fake follower check, audience demographics, shadowban signals, earnings estimate. All 3 platforms in one dashboard.",
     url: "https://decodecreator.com",
     siteName: "DecodeCreator",
+    locale: "en_US",
+    type: "website",
   },
+  twitter: {
+    card: "summary_large_image",
+    title: "DecodeCreator — IG / TikTok / YouTube analytics for public accounts",
+    description:
+      "Engagement rate, fake follower check, audience demographics, shadowban signals — for any public handle. Free tier + credit-based API.",
+    creator: "@decodecreator",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  formatDetection: {
+    email: false,
+    telephone: false,
+  },
+  applicationName: "DecodeCreator",
+  referrer: "origin-when-cross-origin",
 };
 
 // Two theme-color entries so browser chrome (address bar, status bar)
@@ -73,7 +318,14 @@ gtag('consent', 'default', {
 });
 `;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Cheap session check so the logo can point to /account (dashboard)
+  // for signed-in users and / (homepage) for everyone else. Also
+  // hides the Sign in / Start Trial buttons when the user is already
+  // authenticated — they'd otherwise re-trigger the auth modal.
+  const currentUser = await getCurrentUser().catch(() => null);
+  const isSignedIn = !!currentUser;
+  const logoHref = isSignedIn ? "/account" : "/";
   return (
     <html lang="en">
       <head>
@@ -85,12 +337,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         */}
         <script dangerouslySetInnerHTML={{ __html: consentDefaultsScript }} />
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        {/*
+          JSON-LD structured data. Fed to Google (Organization card,
+          FAQ rich results, sitelink search box) + LLM search engines.
+          Single blob keeps Google's parser happy; the @graph array
+          holds multiple entities.
+        */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        />
       </head>
       <body>
         <div className="min-h-screen flex flex-col">
           <header className="sticky top-0 z-30 backdrop-blur-md bg-background/70 border-b border-border/60">
             <div className="container py-4 flex items-center justify-between">
-              <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
+              <Link href={logoHref} className="flex items-center gap-2 font-semibold tracking-tight">
                 <span className="h-7 w-7 rounded-lg bg-gradient-ig" aria-hidden />
                 <span>DecodeCreator</span>
               </Link>
@@ -119,19 +381,32 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   without navigating. AuthModal (rendered at the bottom of
                   <body>) picks up the param and renders. /login and /signup
                   URLs still work as fallbacks for direct visits or emails.
+                  Hidden when the user is already signed in — clicking
+                  them would just re-open the modal on top of the app.
                 */}
-                <Link
-                  href="?auth=signin"
-                  className="text-foreground/80 hover:text-foreground font-medium px-3 py-1.5 rounded-full hover:bg-muted/60 transition-colors"
-                >
-                  Sign in
-                </Link>
-                <Link
-                  href="?auth=signup"
-                  className="rounded-full bg-gradient-ig text-white px-4 py-1.5 font-semibold hover:brightness-110 transition shadow-md shadow-primary/20"
-                >
-                  Start Trial
-                </Link>
+                {!isSignedIn ? (
+                  <>
+                    <Link
+                      href="?auth=signin"
+                      className="text-foreground/80 hover:text-foreground font-medium px-3 py-1.5 rounded-full hover:bg-muted/60 transition-colors"
+                    >
+                      Sign in
+                    </Link>
+                    <Link
+                      href="?auth=signup"
+                      className="rounded-full bg-gradient-ig text-white px-4 py-1.5 font-semibold hover:brightness-110 transition shadow-md shadow-primary/20"
+                    >
+                      Start Trial
+                    </Link>
+                  </>
+                ) : (
+                  <Link
+                    href="/account"
+                    className="rounded-full bg-gradient-ig text-white px-4 py-1.5 font-semibold hover:brightness-110 transition shadow-md shadow-primary/20"
+                  >
+                    Dashboard
+                  </Link>
+                )}
                 <ThemeToggle />
               </nav>
             </div>

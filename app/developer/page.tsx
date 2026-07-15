@@ -12,9 +12,25 @@ import { regionFromHeaders } from "@/core/utils/region";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Developer API — DecodeCreator",
+  title:
+    "Instagram, TikTok & YouTube Analytics API — DecodeCreator Developer Hub",
   description:
-    "Manage API keys, top up your wallet, and integrate the DecodeCreator API into your product. All 12 tools, REST + JSON, x-api-key auth.",
+    "REST API for public Instagram, TikTok & YouTube analytics. Engagement rate, fake follower detection, audience demographics, growth trend. Wallet-based credits from ₹500, 12-month validity, x-api-key auth. HikerAPI + tikwm + YouTube Data API v3 backed.",
+  alternates: { canonical: "https://decodecreator.com/developer" },
+  keywords: [
+    "instagram api",
+    "tiktok api",
+    "youtube api",
+    "instagram engagement api",
+    "public instagram scraper api",
+    "creator analytics api",
+    "influencer data api",
+    "hikerapi alternative",
+    "rapidapi instagram alternative",
+    "tikwm alternative",
+    "instagram profile api",
+    "public tiktok analytics api",
+  ],
 };
 
 // Signed-in developer hub. Route sits at /developer because /api is

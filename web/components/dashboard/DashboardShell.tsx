@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Platform } from "@/core/types";
 import { TOOL_CATEGORIES } from "@/core/tools/registry-helpers";
 import { TOOLS } from "@/core/tools/registry";
-import { PlatformContext } from "./PlatformContext";
+import { PlatformContext, TabContext } from "./PlatformContext";
 
 // GramScraper-style dashboard shell. Sidebar clicks stay on the SAME URL
 // (they just swap ?tab=X in the query), so the whole dashboard behaves
@@ -48,19 +47,20 @@ export function DashboardShell({
   children,
   user,
   credits,
-  activeTab,
+  activeTab: initialTab,
 }: {
   children: React.ReactNode;
   user: { email: string; name?: string; avatarUrl?: string };
   credits: { used: number; limit: number; tierName: string };
   activeTab: string;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const search = useSearchParams();
-
   const [platform, setPlatform] = useState<Platform>("instagram");
   const [platformReady, setPlatformReady] = useState(false);
+  // activeTab lives client-side to keep tab switches near-instant. Was
+  // going through router.push before, which re-ran /account's 7 Supabase
+  // queries on every click. The URL is still synced via history.replaceState
+  // below so back/forward + copy-shared links still work.
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   useEffect(() => {
     try {
@@ -74,6 +74,13 @@ export function DashboardShell({
     setPlatformReady(true);
   }, []);
 
+  // Keep local state in sync if the parent server component re-renders
+  // with a different initialTab (e.g. after a payment redirect back to
+  // /account?tab=subscription&status=success).
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
+
   function selectPlatform(p: Platform) {
     setPlatform(p);
     try {
@@ -83,22 +90,31 @@ export function DashboardShell({
     }
   }
 
-  // Sidebar item click → swap ?tab=X on the current path. Preserves
-  // other query params (e.g. newKey after key creation). scroll:false
-  // keeps the user's scroll position when swapping panels.
-  const setTab = useCallback(
-    (tabId: string) => {
-      const p = new URLSearchParams(search.toString());
-      p.set("tab", tabId);
-      const path = pathname ?? "/account";
-      router.push(`${path}?${p.toString()}`, { scroll: false });
-    },
-    [pathname, router, search],
-  );
+  // Sidebar item click → swap panels in-place (no server re-fetch) and
+  // update the URL via history.replaceState so a browser back button, a
+  // shared link, or a page reload still land the user on the same tab.
+  // scroll behavior is preserved because we're not navigating.
+  const setTab = useCallback((tabId: string) => {
+    setActiveTab(tabId);
+    if (typeof window === "undefined") return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", tabId);
+      window.history.replaceState(null, "", url.toString());
+    } catch {
+      // window.history may throw in restricted iframes; the UI still
+      // works, we just don't update the URL.
+    }
+  }, []);
 
   const contextValue = useMemo(() => platform, [platform]);
+  const tabContextValue = useMemo(
+    () => ({ activeTab, setTab }),
+    [activeTab, setTab],
+  );
 
   return (
+    <TabContext.Provider value={tabContextValue}>
     <PlatformContext.Provider value={contextValue}>
       <div className="min-h-[calc(100vh-4rem)] flex">
         {/* SIDEBAR */}
@@ -184,13 +200,14 @@ export function DashboardShell({
         </div>
       </div>
     </PlatformContext.Provider>
+    </TabContext.Provider>
   );
 }
 
-// ── Section header (bolder per user feedback) ────────────────────────────
+// ── Section header (bolder + larger per user feedback) ───────────────────
 function SectionHeader({ label }: { label: string }) {
   return (
-    <div className="text-[11px] font-bold uppercase tracking-wider text-foreground/70 px-3 mb-2">
+    <div className="text-xs font-extrabold uppercase tracking-[0.12em] text-foreground px-3 mb-2 mt-1">
       {label}
     </div>
   );
