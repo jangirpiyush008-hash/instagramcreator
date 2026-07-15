@@ -51,9 +51,15 @@ export class AwsRekognitionFaceAnalyzer implements FaceAnalyzer {
     const service = "rekognition";
     const host = `${service}.${region}.amazonaws.com`;
     const target = "RekognitionService.DetectFaces";
+    // Rekognition DetectFaces attribute groups:
+    //   DEFAULT → BoundingBox, Confidence, Landmarks, Pose, Quality
+    //   ALL     → adds Gender, AgeRange, Emotions, Smile, Eyeglasses, etc.
+    // We need Gender + AgeRange. Requesting ALL is the smallest set that
+    // includes both — Rekognition doesn't let us cherry-pick individual
+    // attributes without ALL. Cost is the same either way ($0.001/image).
     const body = JSON.stringify({
       Image: { Bytes: bytes.toString("base64") },
-      Attributes: ["DEFAULT"],
+      Attributes: ["ALL"],
     });
 
     const headers = sigV4Headers({ method: "POST", host, region, service, target, body });
