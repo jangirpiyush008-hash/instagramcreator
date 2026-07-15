@@ -65,10 +65,14 @@ export async function POST(req: Request) {
     const entitled = await isEntitled(supa, user?.id ?? null, key);
     const gated = entitled ? result : blurLocked(result);
 
+    // Internal API — the web UI has no use for the diagnostics block.
+    // Always strip it here regardless of debug flags.
+    const clean = stripFreeDiagnostics(gated);
+
     return NextResponse.json({
       ok: true,
       entitled,
-      result: gated,
+      result: clean,
       scanKey: key,
       region,
       isAuthed: !!user,
@@ -113,4 +117,20 @@ export async function POST(req: Request) {
     }
     return toScanErrorResponse(e);
   }
+}
+
+// Strip the enrichment `diagnostics` block from `free` — kept as an
+// internal counter set (see core/data/audience-enrichment.ts) that the
+// web UI has no use for. Public API also strips by default; both can
+// opt in via ?debug=1 there.
+function stripFreeDiagnostics(result: unknown): unknown {
+  if (!result || typeof result !== "object") return result;
+  const r = result as Record<string, unknown>;
+  const free = r.free as Record<string, unknown> | undefined;
+  if (free && "diagnostics" in free) {
+    const { diagnostics: _drop, ...rest } = free;
+    void _drop;
+    return { ...r, free: rest };
+  }
+  return result;
 }

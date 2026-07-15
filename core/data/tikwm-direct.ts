@@ -174,6 +174,35 @@ export class TikwmDirectAdapter extends MockProvider {
     }
   }
 
+  // Loose commenter lookup — same /user/info endpoint as getProfile but
+  // deliberately does NOT throw on private accounts, deleted accounts, or
+  // handle-normalization mismatches. Audience enrichment wants partial
+  // data from as many commenters as possible. Not `override` because
+  // MockProvider doesn't declare this optional interface method.
+  async getCommenterInfo(_platform: Platform, username: string) {
+    try {
+      const data = await this.get<UserInfoData>(
+        `/user/info?unique_id=${encodeURIComponent(username)}`,
+      );
+      const u = data.user;
+      if (!u) return {};
+      return {
+        fullName: u.nickname,
+        avatarUrl: u.avatarLarger,
+        bio: u.signature,
+        isPrivate: u.privateAccount === true || u.secret === true,
+      };
+    } catch (e) {
+      if (process.env.DEBUG_ENRICHMENT === "1") {
+        console.warn(
+          `[tikwm-direct] commenter lookup failed for ${username}:`,
+          e instanceof Error ? e.message : e,
+        );
+      }
+      return {};
+    }
+  }
+
   override async getProfile(platform: Platform, handle: string): Promise<Profile> {
     return this.safe<Profile>(
       "getProfile",

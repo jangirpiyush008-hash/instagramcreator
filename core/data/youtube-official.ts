@@ -132,6 +132,36 @@ export class YouTubeOfficialAdapter extends MockProvider {
     throw new HandleNotFoundError(handle, "youtube");
   }
 
+  // Loose commenter lookup — resolves the channel by handle and returns
+  // partial data (bio + avatar + display name) with no throwing on
+  // not-found. Audience enrichment feeds this into the same pipeline as
+  // IG/TT so face + bio signals work identically across platforms.
+  // Not `override` because MockProvider doesn't declare this optional method.
+  async getCommenterInfo(_platform: Platform, username: string) {
+    try {
+      // YouTube's authorDisplayName in comments can be either "@handle"
+      // or a channel name with spaces. resolveChannel already handles
+      // both via forHandle + forUsername fallback.
+      const ch = await this.resolveChannel(username);
+      return {
+        fullName: ch.snippet?.title,
+        avatarUrl:
+          ch.snippet?.thumbnails?.high?.url ??
+          ch.snippet?.thumbnails?.medium?.url ??
+          ch.snippet?.thumbnails?.default?.url,
+        bio: ch.snippet?.description,
+      };
+    } catch (e) {
+      if (process.env.DEBUG_ENRICHMENT === "1") {
+        console.warn(
+          `[youtube-official] commenter lookup failed for ${username}:`,
+          e instanceof Error ? e.message : e,
+        );
+      }
+      return {};
+    }
+  }
+
   override async getProfile(platform: Platform, handle: string): Promise<Profile> {
     if (platform !== "youtube") {
       throw new DataSourceError(`YouTubeOfficialAdapter received platform=${platform}`);

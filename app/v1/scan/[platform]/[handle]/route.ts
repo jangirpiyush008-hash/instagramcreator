@@ -56,17 +56,19 @@ export async function GET(
     return NextResponse.json({ ok: false, error: auth.error, code: auth.code }, { status: auth.status });
   }
 
-  // ?fresh=1 skips BOTH cache layers. Diagnostic only — charged same
-  // credits, but skips the tool-result cache AND the primitive cache so
-  // callers can see fresh provider data after a code change. Reserved
-  // param name — do NOT surface as a tool param.
+  // Reserved query params:
+  //   ?fresh=1  → skip both cache layers (see freshAdapterFor doc)
+  //   ?debug=1  → include the internal `diagnostics` counter block on
+  //               tools that produce it (e.g. gender-split, fake-follower).
+  //               Off by default so the public API stays clean.
   const bustCache = url.searchParams.get("fresh") === "1";
+  const debug = url.searchParams.get("debug") === "1";
 
-  // Pull any non-`tool` search params through as tool params (postCount,
+  // Pull any non-reserved search params through as tool params (postCount,
   // contentType, etc.). Numeric strings coerce to numbers.
   const params: ToolParams = {};
   for (const [k, v] of url.searchParams.entries()) {
-    if (k === "tool" || k === "fresh") continue;
+    if (k === "tool" || k === "fresh" || k === "debug") continue;
     const num = Number(v);
     if (!Number.isNaN(num) && v.trim() !== "") params[k] = num;
     else if (v === "true" || v === "false") params[k] = v === "true";
@@ -103,7 +105,7 @@ export async function GET(
         platform,
         handle,
         credits: { charged: cost, remaining: newBalance },
-        data: bundle,
+        data: debug ? bundle : stripDiagnosticsFromBundle(bundle),
       });
     }
 
@@ -134,7 +136,7 @@ export async function GET(
       handle,
       credits: { charged: cost, remaining: newBalance },
       cacheHit,
-      data: result,
+      data: debug ? result : stripDiagnostics(result),
     });
   } catch (e) {
     // Refund logic: since we charged optimistically before running the tool,
@@ -162,4 +164,26 @@ export async function GET(
     void cost;
     return toScanErrorResponse(e);
   }
+}
+
+// Strip the internal `diagnostics` counter block from a tool result before
+// returning it to the public API. Kept internal by default so we don't
+// commit to a public shape we might refactor. Callers pass ?debug=1 when
+// they need it (rare — only when debugging enrichment).
+function stripDiagnostics(result: unknown): unknown {
+  if (!result || typeof result !== "object") return result;
+  const r = result as Record<string, unknown>;
+  const free = r.free as Record<string, unknown> | undefined;
+  if (free && "diagnostics" in free) {
+    const { diagnostics: _drop, ...rest } = free;
+    void _drop;
+    return { ...r, free: rest };
+  }
+  return result;
+}
+
+function stripDiagnosticsFromBundle(bundle: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(bundle)) out[k] = stripDiagnostics(v);
+  return out;
 }
