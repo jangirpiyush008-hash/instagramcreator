@@ -6,6 +6,13 @@
 -- lightweight Path A cache — 24h TTL, small result sets per search,
 -- Pro-tier gated. Enough to run a real "Discover" tab for launch.
 
+-- pg_trgm powers the GIN index at the bottom. Must be enabled BEFORE
+-- the index is created (Postgres 42704 error otherwise). Supabase
+-- convention is to install into the `extensions` schema, but its
+-- gin_trgm_ops operator class is exported to public via the extension
+-- itself so an unqualified reference in the index below works.
+create extension if not exists pg_trgm with schema extensions;
+
 create table if not exists creator_index (
   id uuid primary key default gen_random_uuid(),
   platform text not null check (platform in ('instagram','tiktok','youtube')),
@@ -52,12 +59,11 @@ create index if not exists creator_index_platform_refreshed_idx
   on creator_index (platform, refreshed_at desc);
 
 -- GIN index for the keyword search — cheap on Postgres, catches
--- prefix/substring matches in handle+bio+display_name.
+-- prefix/substring matches in handle+bio+display_name. Reference the
+-- operator class in the extensions schema explicitly — Supabase installs
+-- pg_trgm there and the default search_path may not include it.
 create index if not exists creator_index_search_text_trgm_idx
-  on creator_index using gin (search_text gin_trgm_ops);
-
--- Extension may already be installed (used elsewhere for handle-similarity).
-create extension if not exists pg_trgm;
+  on creator_index using gin (search_text extensions.gin_trgm_ops);
 
 -- Trigger: keep search_text in sync automatically. Cheaper than making
 -- every insert path assemble it manually and easier to keep consistent.
