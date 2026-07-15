@@ -17,7 +17,9 @@ import { cn } from "@/web/lib/cn";
 const NAV = [
   { href: "/admin", label: "Overview", exact: true },
   { href: "/admin/users", label: "Users" },
-  { href: "/admin/orders", label: "Growth orders" },
+  // Growth orders removed from the sidebar per owner preference —
+  // still reachable at /admin/orders directly, and surfaced from the
+  // overview KPI card that highlights when pending > 0.
 ];
 
 type Segment = "consumers" | "developers";
@@ -92,14 +94,33 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
       {/* MAIN */}
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* TOP BAR — segment toggle lives here */}
+        {/*
+          TOP BAR — kept intentionally slim. Segment toggle lives on
+          the RIGHT (per owner preference), with the current-view label
+          on the left as a breadcrumb-ish helper. Growth orders link
+          on the right too so it's one click away without cluttering
+          the sidebar.
+        */}
         <div className="border-b border-border bg-background/60 backdrop-blur">
           <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
-            <SegmentToggle seg={seg} onChange={setSeg} />
-            <div className="hidden sm:block text-xs text-muted-foreground">
+            <div className="text-xs text-muted-foreground">
               {seg === "consumers"
-                ? "Viewing: web-app users, subscriptions, per-user scans"
-                : "Viewing: API users, wallet balances, API keys"}
+                ? "Viewing web-app users, subscriptions, per-user scans"
+                : "Viewing API users, wallet balances, API keys"}
+            </div>
+            <div className="flex items-center gap-3">
+              <Link
+                href="/admin/orders"
+                className={cn(
+                  "text-xs font-medium px-3 py-1.5 rounded-full transition-colors",
+                  pathname.startsWith("/admin/orders")
+                    ? "bg-primary/10 text-primary"
+                    : "text-foreground/70 hover:text-foreground hover:bg-muted/60",
+                )}
+              >
+                Growth orders
+              </Link>
+              <SegmentToggle seg={seg} onChange={setSeg} />
             </div>
           </div>
         </div>

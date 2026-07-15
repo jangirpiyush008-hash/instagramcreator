@@ -28,7 +28,13 @@ interface Row {
   wallet_credits: number;
 }
 
-async function loadUsers(seg: "consumers" | "developers", q: string): Promise<Row[]> {
+interface LoadResult {
+  rows: Row[];
+  error?: string;         // human-readable — surfaced in the UI
+  diag?: string;          // extra diagnostic for us
+}
+
+async function loadUsers(seg: "consumers" | "developers", q: string): Promise<LoadResult> {
   const supa = supabaseService();
 
   // If the segment is developers, restrict to user_ids that have an
@@ -36,12 +42,19 @@ async function loadUsers(seg: "consumers" | "developers", q: string): Promise<Ro
   // client-side.
   let devUserIds: Set<string> | null = null;
   if (seg === "developers") {
-    const { data: keys } = await supa
+    const { data: keys, error: keysErr } = await supa
       .from("api_keys")
       .select("user_id")
       .is("revoked_at", null);
+    if (keysErr) {
+      return {
+        rows: [],
+        error: `Couldn't load api_keys: ${keysErr.message}`,
+        diag: keysErr.code,
+      };
+    }
     devUserIds = new Set((keys ?? []).map((k) => k.user_id));
-    if (devUserIds.size === 0) return [];
+    if (devUserIds.size === 0) return { rows: [], diag: "no-devs" };
   }
 
   let query = supa
@@ -67,10 +80,14 @@ async function loadUsers(seg: "consumers" | "developers", q: string): Promise<Ro
   const { data: profiles, error } = await query;
   if (error) {
     console.error("[admin/users] load failed:", error);
-    return [];
+    return {
+      rows: [],
+      error: `Couldn't load profiles: ${error.message}`,
+      diag: error.code,
+    };
   }
   const userIds = (profiles ?? []).map((p) => p.id);
-  if (userIds.length === 0) return [];
+  if (userIds.length === 0) return { rows: [], diag: "profiles-empty" };
 
   // Enrich each user with: active sub plan, api_key count, wallet credits.
   const [{ data: subs }, { data: keys }, { data: walletLots }] = await Promise.all([
@@ -104,7 +121,7 @@ async function loadUsers(seg: "consumers" | "developers", q: string): Promise<Ro
     walletByUser.set(w.user_id, (walletByUser.get(w.user_id) ?? 0) + Number(w.credits_remaining ?? 0));
   }
 
-  return (profiles ?? []).map((p) => ({
+  return { rows: (profiles ?? []).map((p) => ({
     id: p.id,
     email: p.email,
     full_name: p.full_name,
@@ -115,7 +132,7 @@ async function loadUsers(seg: "consumers" | "developers", q: string): Promise<Ro
     active_sub_status: subByUser.get(p.id)?.status ?? null,
     api_key_count: keysByUser.get(p.id) ?? 0,
     wallet_credits: walletByUser.get(p.id) ?? 0,
-  }));
+  })) };
 }
 
 export default async function AdminUsersPage({
@@ -125,7 +142,7 @@ export default async function AdminUsersPage({
 }) {
   const { seg: segRaw = "consumers", q = "" } = await searchParams;
   const seg = segRaw === "developers" ? "developers" : "consumers";
-  const rows = await loadUsers(seg, q);
+  const { rows, error, diag } = await loadUsers(seg, q);
 
   return (
     <div className="max-w-6xl">
@@ -160,9 +177,21 @@ export default async function AdminUsersPage({
         </button>
       </form>
 
+      {error && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive mb-4">
+          <div className="font-medium">Query error</div>
+          <div className="text-xs mt-1 font-mono">{error}</div>
+          <div className="text-[11px] text-muted-foreground mt-2">
+            Common causes: SUPABASE_SERVICE_ROLE missing on Railway, or a
+            migration hasn&apos;t been applied yet.
+          </div>
+        </div>
+      )}
+
       <div className="text-xs text-muted-foreground mb-3">
         {rows.length}
         {rows.length === 200 ? "+" : ""} result{rows.length === 1 ? "" : "s"}
+        {diag ? ` · diag: ${diag}` : ""}
       </div>
 
       {/* Users table */}

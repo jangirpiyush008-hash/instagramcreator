@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import Script from "next/script";
 import { Suspense } from "react";
+import { headers } from "next/headers";
 import { ThemeToggle } from "@/web/components/ThemeToggle";
 import { AuthModal } from "@/web/components/AuthModal";
 import { CookieBanner, CookiePreferencesLink } from "@/web/components/CookieBanner";
@@ -320,6 +321,24 @@ gtag('consent', 'default', {
 `;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Admin context detection — set by middleware.ts on either the
+  // admin.decodecreator.com subdomain or any /admin/* path. When true
+  // we skip the entire marketing chrome (header nav + footer + cookie
+  // banner + GA + auth modal + cart provider) — the admin console has
+  // its own layout and shouldn't be interrupted by marketing bits.
+  const hdrs = await headers();
+  const isAdminContext = hdrs.get("x-dc-is-admin") === "1";
+  if (isAdminContext) {
+    return (
+      <html lang="en">
+        <head>
+          <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        </head>
+        <body>{children}</body>
+      </html>
+    );
+  }
+
   // Cheap session check so the logo can point to /account (dashboard)
   // for signed-in users and / (homepage) for everyone else. Also
   // hides the Sign in / Start Trial buttons when the user is already
