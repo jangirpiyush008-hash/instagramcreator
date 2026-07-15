@@ -4,15 +4,20 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { TIERS } from "@/core/api/credits";
+import { CREDIT_PACKS } from "@/core/billing/tiers";
+import type { WalletLot } from "@/core/billing/wallet";
+import { WalletPacks } from "@/web/components/wallet/WalletPacks";
+import { WalletBalanceCard, WalletHistory } from "@/web/components/wallet/WalletBalance";
 
 // Signed-in developer hub. Consolidates:
+//   • Wallet balance + top-up (packs + custom recharge) + history
 //   • Quick start with runnable terminal snippets
 //   • API key management (create + reveal-once + revoke)
 //   • API tier pricing + upgrade CTAs
 //   • Endpoint & error-code reference (deeper live in /docs)
 //
 // Deliberately client-side for the key-management interactions.
-// Server passes the initial keys list + user context down as props.
+// Server passes wallet balance + lots + keys + user context down as props.
 
 interface ApiKeyRow {
   id: string;
@@ -30,9 +35,24 @@ interface Props {
   keys: ApiKeyRow[];
   newKey?: string;             // raw key shown ONCE after creation
   currentTierId: string;       // matches CONSUMER_TIERS id or "starter" default
+  wallet: {                    // wallet balance + lot ledger for this user
+    credits: number;
+    lots: WalletLot[];
+  };
+  topupStatus?: string;        // 'topup-success' after Razorpay callback
+  // 'IN' when the visitor is in India, 'GLOBAL' otherwise. Drives the
+  // ₹ vs $ display in the wallet packs (same behavior as /pricing).
+  region: "IN" | "GLOBAL";
 }
 
-export function DeveloperHub({ keys, newKey, currentTierId }: Props) {
+export function DeveloperHub({
+  keys,
+  newKey,
+  currentTierId,
+  wallet,
+  topupStatus,
+  region,
+}: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [name, setName] = useState("Default");
@@ -95,6 +115,39 @@ export function DeveloperHub({ keys, newKey, currentTierId }: Props) {
           auth, credit-based pricing. All 12 tools + a bundled full-report endpoint.
         </p>
       </header>
+
+      {/* TOP-UP SUCCESS CALLBACK — shown when Razorpay redirected back
+          from a completed wallet purchase. Balance is fetched fresh on
+          load, so we just say "credits should appear shortly" (webhook
+          may fire seconds after the redirect). */}
+      {topupStatus === "topup-success" && (
+        <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-5 text-sm">
+          <div className="font-semibold text-emerald-800 dark:text-emerald-200">
+            ✓ Payment received
+          </div>
+          <p className="text-foreground/70 mt-1">
+            Credits normally land within a few seconds via the webhook. Refresh this page
+            in a moment if you don&apos;t see the new balance yet.
+          </p>
+        </div>
+      )}
+
+      {/* WALLET — balance card, purchase options, history */}
+      <section id="wallet" className="space-y-4">
+        <WalletBalanceCard credits={wallet.credits} lots={wallet.lots} />
+        <div className="space-y-3">
+          <h2 className="text-xl font-semibold tracking-tight">Top up your wallet</h2>
+          <p className="text-sm text-foreground/70 max-w-2xl">
+            Buy credits once, use for 12 months. Same key, same endpoints — API deducts from
+            subscription quota first, wallet second.
+          </p>
+          <WalletPacks packs={CREDIT_PACKS} inr={region === "IN"} isSignedIn />
+        </div>
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-foreground/80">Purchase history</h3>
+          <WalletHistory lots={wallet.lots} />
+        </div>
+      </section>
 
       {/* NEW-KEY CALLOUT */}
       {newKey && (

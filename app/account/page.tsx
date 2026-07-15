@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getCurrentUser, supabaseServer } from "@/web/lib/supabase-server";
 import { supabaseService } from "@/core/database/supabase";
@@ -7,6 +8,8 @@ import { SubscriptionPanel, WatchlistPanel } from "@/web/components/dashboard/Ac
 import { TIERS, type Tier } from "@/core/api/credits";
 import { getUserTier } from "@/core/billing/entitlements";
 import { readUsage } from "@/core/billing/rate-limit";
+import { getWalletBalance } from "@/core/billing/wallet";
+import { regionFromHeaders } from "@/core/utils/region";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +26,9 @@ export default async function AccountPage({
   const supaService = supabaseService();
   const supabase = await supabaseServer();
 
+  const hdrs = await headers();
+  const region = regionFromHeaders(hdrs);
+
   const [
     { data: subs },
     { data: unlocks },
@@ -30,6 +36,7 @@ export default async function AccountPage({
     { data: apiKeys },
     { data: watchlist },
     consumerTier,
+    wallet,
   ] = await Promise.all([
     supabase
       .from("subscriptions")
@@ -54,6 +61,7 @@ export default async function AccountPage({
       .eq("user_id", user.id)
       .order("created_at", { ascending: false }),
     getUserTier(supaService, user.id),
+    getWalletBalance(supaService, user.id),
   ]);
 
   const activeSub = subs?.find((s) => s.status === "active");
@@ -127,6 +135,8 @@ export default async function AccountPage({
           })),
           newKey,
           currentTierId: currentApiTier,
+          wallet,
+          region,
         }}
         subscriptionPanel={
           <SubscriptionPanel
