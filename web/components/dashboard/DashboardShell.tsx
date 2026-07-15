@@ -16,6 +16,7 @@ import { PlatformContext, TabContext } from "./PlatformContext";
 // exposed via PlatformContext for panels to consume without prop-drilling.
 
 const ACCOUNT_TABS: { id: string; label: string }[] = [
+  { id: "profile", label: "My Profile" },
   { id: "subscription", label: "Subscription" },
   { id: "watchlist", label: "Watchlist" },
 ];
@@ -190,7 +191,7 @@ export function DashboardShell({
               </div>
               <div className="flex items-center gap-4">
                 <CreditMeter used={credits.used} limit={credits.limit} tierName={credits.tierName} />
-                <UserPill user={user} />
+                <UserPill user={user} onClick={() => setTab("profile")} />
               </div>
             </div>
           </div>
@@ -328,10 +329,19 @@ function CreditMeter({
 }
 
 // ── User pill ────────────────────────────────────────────────────────────
-function UserPill({ user }: { user: { email: string; name?: string; avatarUrl?: string } }) {
+// Clickable — jumps to the Profile tab so a user always has one obvious
+// way to reach their settings. Replaces the previous separate Dashboard
+// button in the header nav (which was redundant with the logo redirect).
+function UserPill({
+  user,
+  onClick,
+}: {
+  user: { email: string; name?: string; avatarUrl?: string };
+  onClick?: () => void;
+}) {
   const initial = (user.name ?? user.email).charAt(0).toUpperCase();
-  return (
-    <div className="flex items-center gap-2 text-sm">
+  const inner = (
+    <>
       {user.avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -344,11 +354,22 @@ function UserPill({ user }: { user: { email: string; name?: string; avatarUrl?: 
           {initial}
         </div>
       )}
-      <div className="hidden md:block">
+      <div className="hidden md:block text-left">
         <div className="text-xs font-semibold leading-tight">{user.name ?? "Account"}</div>
         <div className="text-[10px] text-foreground/60 truncate max-w-[160px]">{user.email}</div>
       </div>
-    </div>
+    </>
+  );
+  if (!onClick) return <div className="flex items-center gap-2 text-sm">{inner}</div>;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Open profile"
+      className="flex items-center gap-2 text-sm rounded-full pr-3 pl-0.5 py-0.5 hover:bg-muted/60 transition-colors"
+    >
+      {inner}
+    </button>
   );
 }
 

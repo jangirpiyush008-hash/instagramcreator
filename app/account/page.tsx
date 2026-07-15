@@ -5,6 +5,7 @@ import { supabaseService } from "@/core/database/supabase";
 import { DashboardShell } from "@/web/components/dashboard/DashboardShell";
 import { DashboardPanels } from "@/web/components/dashboard/DashboardPanels";
 import { SubscriptionPanel, WatchlistPanel } from "@/web/components/dashboard/AccountPanels";
+import { ProfilePanel } from "@/web/components/dashboard/ProfilePanel";
 import { TIERS, type Tier } from "@/core/api/credits";
 import { getUserTier } from "@/core/billing/entitlements";
 import { readUsage } from "@/core/billing/rate-limit";
@@ -49,7 +50,13 @@ export default async function AccountPage({
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(10),
-    supaService.from("profiles").select("email, full_name, avatar_url").eq("id", user.id).maybeSingle(),
+    supaService
+      .from("profiles")
+      .select(
+        "email, full_name, avatar_url, phone, country_code, company, job_title, timezone, marketing_opt_in, product_updates_opt_in",
+      )
+      .eq("id", user.id)
+      .maybeSingle(),
     supabase
       .from("api_keys")
       .select("id, name, key_prefix, tier, credits_remaining, credits_included, created_at, revoked_at, last_used_at")
@@ -163,6 +170,28 @@ export default async function AccountPage({
               label: w.label,
               created_at: w.created_at,
             }))}
+          />
+        }
+        profilePanel={
+          <ProfilePanel
+            initial={{
+              email: user.email ?? "",
+              fullName: profile?.full_name ?? "",
+              avatarUrl: profile?.avatar_url ?? undefined,
+              phone: profile?.phone ?? undefined,
+              countryCode: profile?.country_code ?? undefined,
+              company: profile?.company ?? undefined,
+              jobTitle: profile?.job_title ?? undefined,
+              timezone: profile?.timezone ?? undefined,
+              marketingOptIn: profile?.marketing_opt_in ?? false,
+              productUpdatesOptIn: profile?.product_updates_opt_in ?? true,
+              // OAuth-only users have no password to change. Detect by
+              // checking user.identities — a Google-signup user has
+              // provider=google, no `email` provider entry.
+              hasPassword: (user.identities ?? []).some(
+                (i) => i.provider === "email",
+              ),
+            }}
           />
         }
       />

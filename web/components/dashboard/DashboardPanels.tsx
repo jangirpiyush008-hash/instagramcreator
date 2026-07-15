@@ -52,6 +52,7 @@ interface Props {
   developer: React.ComponentProps<typeof DeveloperHub>;
   subscriptionPanel: React.ReactNode;
   watchlistPanel: React.ReactNode;
+  profilePanel: React.ReactNode;
 }
 
 export function DashboardPanels({
@@ -59,6 +60,7 @@ export function DashboardPanels({
   developer,
   subscriptionPanel,
   watchlistPanel,
+  profilePanel,
 }: Props) {
   const { activeTab, setTab } = useTab();
 
@@ -70,6 +72,9 @@ export function DashboardPanels({
   }
   if (activeTab === "watchlist") {
     return <>{watchlistPanel}</>;
+  }
+  if (activeTab === "profile") {
+    return <>{profilePanel}</>;
   }
 
   const tool = TOOL_META[activeTab];

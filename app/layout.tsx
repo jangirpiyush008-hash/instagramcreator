@@ -416,11 +416,21 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     </Link>
                   </>
                 ) : (
+                  /*
+                    Signed-in users no longer need a separate "Dashboard"
+                    button in the header — the logo already redirects
+                    them there, and the user pill inside the dashboard
+                    opens their profile. Keeping the header lean.
+                    "My Profile" is one click via the pill on any
+                    /account page. Outside /account (e.g. on marketing
+                    pages), we surface it here so the profile is never
+                    more than one click away.
+                  */
                   <Link
-                    href="/account"
+                    href="/account?tab=profile"
                     className="rounded-full bg-gradient-ig text-white px-4 py-1.5 font-semibold hover:brightness-110 transition shadow-md shadow-primary/20"
                   >
-                    Dashboard
+                    My Profile
                   </Link>
                 )}
                 <ThemeToggle />
