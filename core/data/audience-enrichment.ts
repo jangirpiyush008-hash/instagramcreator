@@ -48,6 +48,20 @@ export interface EnrichedAudience {
   confidence: "high" | "medium" | "low";
   profileCompletenessPct: number; // 0-100 — % of sampled profiles with a bio + avatar
   faceAnalyzer: string;   // "mock" | "aws" | ...
+  // Diagnostic counters exposed on every response — cheap to compute
+  // and invaluable for debugging "why is bio/face returning 0?" without
+  // needing Railway log access.
+  diagnostics?: {
+    profilesWithBio: number;         // # commenters we retrieved a bio for
+    profilesWithAvatar: number;      // # commenters we got an avatarUrl for
+    bioTried: number;                // # bios we ran through parseBio
+    bioSignalFound: number;          // # where parseBio returned a gender
+    faceTried: number;               // # times we called analyzer.analyze()
+    faceDetected: number;            // # where Rekognition found a face
+    faceGenderClassified: number;    // # where we accepted the gender (>0.6)
+    sampleAvatarUrl?: string;        // first non-null avatarUrl (for URL debugging)
+    sampleBio?: string;              // first non-null bio, truncated to 120 chars
+  };
 }
 
 interface EnrichmentOptions {
@@ -137,23 +151,37 @@ export async function enrichCommentAudience(
     male: 0, female: 0, nonbinary: 0, unknown: 0,
     bio: 0, face: 0, name: 0,
     with_bio: 0, with_avatar: 0,
+    // Diagnostic counters — exposed on the API response so we don't
+    // need Railway log access to debug why a signal is returning zero.
+    bioTried: 0, bioSignalFound: 0,
+    faceTried: 0, faceDetected: 0, faceGenderClassified: 0,
   };
   const brackets = { "18-24": 0, "25-34": 0, "35-44": 0, "45+": 0, unknown: 0 };
+  let sampleAvatarUrl: string | undefined;
+  let sampleBio: string | undefined;
 
   for (const e of enrichees) {
-    if (e.bio) counts.with_bio += 1;
-    if (e.avatarUrl) counts.with_avatar += 1;
+    if (e.bio) {
+      counts.with_bio += 1;
+      if (!sampleBio) sampleBio = e.bio.slice(0, 120);
+    }
+    if (e.avatarUrl) {
+      counts.with_avatar += 1;
+      if (!sampleAvatarUrl) sampleAvatarUrl = e.avatarUrl;
+    }
 
     let assignedGender: "male" | "female" | "nonbinary" | null = null;
     let assignedBracket: "18-24" | "25-34" | "35-44" | "45+" | null = null;
 
     // 1. Bio — strongest signal (self-declared). Only available when the
-    //    getProfile succeeded for this commenter.
+    //    getProfile / getCommenterInfo call returned a bio.
     if (e.bio) {
+      counts.bioTried += 1;
       const bio: BioSignals = parseBio(e.bio);
       if (bio.inferredGender && bio.genderConfidence !== "low") {
         assignedGender = bio.inferredGender;
         counts.bio += 1;
+        counts.bioSignalFound += 1;
       }
       if (bio.inferredAgeBracket) assignedBracket = bio.inferredAgeBracket;
     }
@@ -161,13 +189,16 @@ export async function enrichCommentAudience(
     // 2. Face — mid-strength, only when bio missed AND we have an avatar
     //    AND an analyzer is configured.
     if ((!assignedGender || !assignedBracket) && runFace && e.avatarUrl) {
+      counts.faceTried += 1;
       try {
         const face = await analyzer.analyze(e.avatarUrl);
+        if (face.faceCount > 0) counts.faceDetected += 1;
         // Rekognition typically returns 0.7-0.95 for clear faces; 0.6 is
         // our floor. Below that, treat as unresolved rather than guess.
         if (!assignedGender && face.gender && face.genderConfidence > 0.6) {
           assignedGender = face.gender;
           counts.face += 1;
+          counts.faceGenderClassified += 1;
         }
         if (!assignedBracket && face.ageBracket) {
           assignedBracket = face.ageBracket;
@@ -232,5 +263,16 @@ export async function enrichCommentAudience(
     confidence,
     profileCompletenessPct: Number(((counts.with_bio + counts.with_avatar) / (2 * total) * 100).toFixed(1)),
     faceAnalyzer: analyzer.name,
+    diagnostics: {
+      profilesWithBio: counts.with_bio,
+      profilesWithAvatar: counts.with_avatar,
+      bioTried: counts.bioTried,
+      bioSignalFound: counts.bioSignalFound,
+      faceTried: counts.faceTried,
+      faceDetected: counts.faceDetected,
+      faceGenderClassified: counts.faceGenderClassified,
+      sampleAvatarUrl,
+      sampleBio,
+    },
   };
 }

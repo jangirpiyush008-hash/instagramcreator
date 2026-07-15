@@ -134,6 +134,7 @@ export const genderSplit: SocialTool = {
         faceAnalyzer: audience.faceAnalyzer,
         profileCompletenessPct: audience.profileCompletenessPct,
         source: "commenters",
+        diagnostics: audience.diagnostics,
         methodology: METHODOLOGY,
         caveat: isYouTube ? YT_CAVEAT : undefined,
       },
