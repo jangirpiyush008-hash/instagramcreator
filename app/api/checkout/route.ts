@@ -39,7 +39,15 @@ export async function POST(req: Request) {
   }
 
   // Prefer 'tier' when set (new flow), else fall back to 'plan' (legacy).
-  const plan: Plan | undefined = parsed.data.tier ?? parsed.data.plan;
+  // For tier flow we optionally accept 'cycle' — defaults to monthly.
+  // The plan token becomes 'tier[:cycle]' — the Razorpay adapter parses
+  // this to pick the right monthly-vs-annual plan_id.
+  const cycle = parsed.data.cycle ?? "monthly";
+  const plan: Plan | undefined = parsed.data.tier
+    ? cycle === "annual"
+      ? (`${parsed.data.tier}:annual` as Plan)
+      : (parsed.data.tier as Plan)
+    : parsed.data.plan;
   if (!plan) {
     return NextResponse.json(
       { ok: false, error: "Missing 'tier' or 'plan' in request body" },

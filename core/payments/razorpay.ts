@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { PRICING } from "../constants";
-import { CONSUMER_TIERS, type ConsumerTier } from "../billing/tiers";
+import { CONSUMER_TIERS, API_STARTER_TIER, type ConsumerTier } from "../billing/tiers";
 import { PaymentError } from "../utils/errors";
 import type { Plan } from "../types";
 import type { CheckoutSession, PaymentProvider, VerifiedWebhookEvent } from "./provider";
@@ -25,6 +25,66 @@ interface RzpSubResp {
   id: string;
   status: string;
   short_url?: string;
+}
+
+interface RzpPaymentLinkResp {
+  id: string;
+  short_url: string;
+  status: string;
+}
+
+// Create a Razorpay Payment Link — a hosted, share-able page for a
+// single one-time payment. Used for wallet top-ups: user picks a pack,
+// we create a link with the right amount, redirect them to short_url,
+// they pay, Razorpay fires payment.captured webhook AND payment_link.paid
+// webhook. We credit the wallet on either signal (idempotent by
+// payment_id).
+//
+// Docs: https://razorpay.com/docs/api/payments/payment-links/
+export async function createRazorpayPaymentLink(args: {
+  userId: string;
+  amountMinor: number;    // paise (INR)
+  currency?: string;      // defaults 'INR'
+  description: string;
+  packId?: string;        // wallet pack id, embedded in notes for webhook
+  customerEmail?: string;
+  customerName?: string;
+  callbackUrl: string;    // where Razorpay redirects after payment
+}): Promise<{ url: string; linkId: string }> {
+  const res = await fetch(`${RZP_API}/payment_links`, {
+    method: "POST",
+    headers: {
+      Authorization: basicAuthHeader(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      amount: args.amountMinor,
+      currency: args.currency ?? "INR",
+      accept_partial: false,
+      description: args.description,
+      customer: {
+        name: args.customerName,
+        email: args.customerEmail,
+      },
+      notify: { sms: false, email: !!args.customerEmail },
+      reminder_enable: false,
+      // Notes flow through to the webhook — we use them to map
+      // payment.captured events back to the right user + wallet pack.
+      notes: {
+        userId: args.userId,
+        kind: "wallet-topup",
+        packId: args.packId ?? "",
+      },
+      callback_url: args.callbackUrl,
+      callback_method: "get",
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new PaymentError(`Razorpay payment_link failed: ${res.status} ${body.slice(0, 200)}`);
+  }
+  const link = (await res.json()) as RzpPaymentLinkResp;
+  return { url: link.short_url, linkId: link.id };
 }
 
 export class RazorpayProvider implements PaymentProvider {
@@ -122,7 +182,15 @@ export class RazorpayProvider implements PaymentProvider {
         userId: notes.userId ?? "",
         plan: notes.kind === "one_time" ? "one_time" : undefined,
         scanKey: notes.scanKey || undefined,
-        data: { paymentId: p?.id, amount: p?.amount },
+        data: {
+          paymentId: p?.id,
+          amount: p?.amount,
+          // Pass through wallet-topup context so the webhook route can
+          // route a payment.captured event to creditWallet() without a
+          // second Razorpay API round-trip.
+          kind: notes.kind,
+          packId: notes.packId,
+        },
       };
     }
 
@@ -177,6 +245,17 @@ function resolveRazorpayPlanId(plan: Plan): string | undefined {
   // Parse `tier[:cycle]`. Default cycle is monthly.
   const [tierId, cycleRaw] = plan.split(":") as [string, string | undefined];
   const cycle: "monthly" | "annual" = cycleRaw === "annual" ? "annual" : "monthly";
+
+  // Developer API subscription lives in a separate constant since it's
+  // a different product line (API access vs web-app scans).
+  if (tierId === "api-starter") {
+    const envName =
+      cycle === "annual"
+        ? API_STARTER_TIER.razorpayPlanAnnualEnv
+        : API_STARTER_TIER.razorpayPlanMonthlyEnv;
+    return envName ? process.env[envName] : undefined;
+  }
+
   const tier = CONSUMER_TIERS[tierId] as ConsumerTier | undefined;
   if (!tier) return undefined;
   const envName =

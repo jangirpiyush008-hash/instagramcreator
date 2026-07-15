@@ -20,15 +20,19 @@ export const ScanRequestSchema = z.object({
 
 export const PlanSchema = z.enum(["monthly", "annual", "one_time"]);
 export const RegionSchema = z.enum(["IN", "GLOBAL"]);
-// Consumer tier plans purchasable via /checkout. Free tier is not
+// Consumer + API tier plans purchasable via /checkout. Free tier is not
 // purchasable — signing up creates a "free" user implicitly.
-export const TierSchema = z.enum(["starter", "pro", "scale"]);
+export const TierSchema = z.enum(["starter", "pro", "scale", "api-starter"]);
+// Billing cycle for tier-based subscriptions.
+export const CycleSchema = z.enum(["monthly", "annual"]);
 
 export const CheckoutRequestSchema = z.object({
   // Either 'plan' (legacy: monthly / annual / one_time) OR 'tier'
-  // (new: starter / pro / scale). Route accepts both during rollout.
+  // (new: starter / pro / scale / api-starter, with optional cycle).
+  // Route accepts both during rollout.
   plan: PlanSchema.optional(),
   tier: TierSchema.optional(),
+  cycle: CycleSchema.optional(),   // defaults to monthly if omitted
   scanKey: z.string().min(1).optional(),
 });
 

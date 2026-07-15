@@ -4,10 +4,24 @@ export type Region = "IN" | "GLOBAL";
 
 // Plan / tier identifier passed to payment providers.
 //   - Legacy: 'monthly' | 'annual' (single flat plan) and 'one_time' (single-report unlock)
-//   - New: consumer tier ids from core/billing/tiers.ts ('starter' | 'pro' | 'scale')
+//   - Consumer tier ids from core/billing/tiers.ts ('starter' | 'pro' | 'scale')
+//   - Developer API subscription: 'api-starter'
+//   - Any of the tier ids can carry a ':annual' suffix to indicate annual
+//     billing cycle (e.g., 'starter:annual', 'pro:annual', 'api-starter:annual')
 // Provider adapters branch on this string to route to the right
 // Razorpay plan id / LemonSqueezy variant.
-export type Plan = "monthly" | "annual" | "one_time" | "starter" | "pro" | "scale";
+export type Plan =
+  | "monthly"
+  | "annual"
+  | "one_time"
+  | "starter"
+  | "pro"
+  | "scale"
+  | "api-starter"
+  | "starter:annual"
+  | "pro:annual"
+  | "scale:annual"
+  | "api-starter:annual";
 
 export type SubscriptionStatus = "active" | "canceled" | "past_due";
 

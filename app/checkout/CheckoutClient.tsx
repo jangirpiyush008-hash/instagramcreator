@@ -8,9 +8,11 @@ import { useEffect, useState } from "react";
 
 export function CheckoutClient({
   tierId,
+  cycle,
   scanKey,
 }: {
   tierId: string;
+  cycle?: "monthly" | "annual";
   scanKey?: string;
 }) {
   const [state, setState] = useState<
@@ -24,7 +26,7 @@ export function CheckoutClient({
     fetch("/api/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tier: tierId, scanKey }),
+      body: JSON.stringify({ tier: tierId, cycle, scanKey }),
     })
       .then(async (r) => {
         const j = (await r.json()) as
@@ -48,7 +50,7 @@ export function CheckoutClient({
     return () => {
       cancelled = true;
     };
-  }, [tierId, scanKey]);
+  }, [tierId, cycle, scanKey]);
 
   if (state.kind === "error") {
     return (
