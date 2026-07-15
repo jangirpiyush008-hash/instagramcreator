@@ -173,6 +173,12 @@ export class RazorpayProvider implements PaymentProvider {
       .createHmac("sha256", secret)
       .update(rawBody)
       .digest("hex");
+    // timingSafeEqual throws on different-length buffers. Reject clearly
+    // when the caller sent no signature (unsigned test requests, missing
+    // header, etc.) instead of leaking Node's raw error string.
+    if (signature.length !== expected.length) {
+      throw new PaymentError("Razorpay webhook signature missing or malformed");
+    }
     if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) {
       throw new PaymentError("Razorpay webhook signature mismatch");
     }
