@@ -126,8 +126,8 @@ export function DashboardShell({
               ))}
               <SidebarItem
                 key="api"
-                href="/docs"
-                label="API & Developer"
+                href="/developer"
+                label="Developer API"
                 icon="◧"
                 highlight
               />
