@@ -1,43 +1,46 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Platform } from "@/core/types";
 import { TOOL_CATEGORIES } from "@/core/tools/registry-helpers";
 import { TOOLS } from "@/core/tools/registry";
+import { PlatformContext } from "./PlatformContext";
 
-// GramScraper-style dashboard shell. Renders:
-//   • Left sidebar: tool categories (User Data / Media Data / Discovery)
-//     + account settings (Overview, API Keys, Usage, Watchlist, Billing).
-//   • Top bar: platform toggle (IG/TT/YT), credit meter, user pill, sign out.
-//   • Main content area: whatever the page passes as children.
+// GramScraper-style dashboard shell. Sidebar clicks stay on the SAME URL
+// (they just swap ?tab=X in the query), so the whole dashboard behaves
+// like a single-page workspace. The right-panel content (children) reads
+// the tab param and renders the matching workspace / panel.
 //
-// Platform selection is stored in localStorage under 'dc-platform' so
-// sidebar tool links respect the user's most-recent choice across pages.
-// Falls back to 'instagram' on first visit / SSR.
+// Platform selection lives in localStorage under 'dc-platform' and is
+// exposed via PlatformContext for panels to consume without prop-drilling.
 
-const ACCOUNT_TABS: { id: string; label: string; icon: string }[] = [
-  { id: "overview", label: "Overview", icon: "◈" },
-  { id: "api-keys", label: "API Keys", icon: "◉" },
-  { id: "usage", label: "API Usage", icon: "◇" },
-  { id: "watchlist", label: "Watchlist", icon: "◐" },
-  { id: "subscription", label: "Subscription", icon: "◆" },
+const ACCOUNT_TABS: { id: string; label: string }[] = [
+  { id: "subscription", label: "Subscription" },
+  { id: "watchlist", label: "Watchlist" },
 ];
 
-// Trimmed tool metadata — the shell reads name + slug from the registry
-// at build time; passing serializable objects into the client keeps the
-// registry's run() functions out of the bundle.
+// Trimmed tool metadata — serializable subset the client bundle can
+// safely import. Full SocialTool holds a run() function that can't
+// cross the server→client boundary.
 type ToolMeta = {
   id: string;
   slug: string;
   name: string;
+  intentLabel: string;
   platforms: Platform[];
 };
 const TOOL_META: Record<string, ToolMeta> = Object.fromEntries(
   TOOLS.map((t) => [
     t.id,
-    { id: t.id, slug: t.seo.slug ?? t.id, name: t.name, platforms: [...t.platforms] },
+    {
+      id: t.id,
+      slug: t.seo.slug ?? t.id,
+      name: t.name,
+      intentLabel: t.intentLabel,
+      platforms: [...t.platforms],
+    },
   ]),
 );
 
@@ -50,9 +53,12 @@ export function DashboardShell({
   children: React.ReactNode;
   user: { email: string; name?: string; avatarUrl?: string };
   credits: { used: number; limit: number; tierName: string };
-  activeTab?: string; // for account-section highlighting
+  activeTab: string;
 }) {
+  const router = useRouter();
   const pathname = usePathname();
+  const search = useSearchParams();
+
   const [platform, setPlatform] = useState<Platform>("instagram");
   const [platformReady, setPlatformReady] = useState(false);
 
@@ -73,137 +79,160 @@ export function DashboardShell({
     try {
       window.localStorage.setItem("dc-platform", p);
     } catch {
-      // localStorage disabled — selection still works for this tab.
+      // ignore
     }
   }
 
-  return (
-    <div className="min-h-[calc(100vh-4rem)] flex">
-      {/* SIDEBAR */}
-      <aside className="hidden md:flex md:w-64 lg:w-72 shrink-0 border-r border-border bg-card/40 flex-col">
-        <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-6">
-          {TOOL_CATEGORIES.map((cat) => (
-            <div key={cat.id}>
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-3 mb-2">
-                {cat.label}
-              </div>
-              <div className="space-y-0.5">
-                {cat.toolIds.map((toolId) => {
-                  const tool = TOOL_META[toolId];
-                  if (!tool) return null;
-                  const supports = tool.platforms.includes(platform);
-                  const href = `/${platform}/creator/${tool.slug}`;
-                  return (
-                    <SidebarItem
-                      key={tool.id}
-                      href={href}
-                      label={tool.name}
-                      active={pathname?.endsWith(`/${tool.slug}`) ?? false}
-                      disabled={!supports}
-                      disabledHint={
-                        !supports ? `Not available on ${labelFor(platform)}` : undefined
-                      }
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+  // Sidebar item click → swap ?tab=X on the current path. Preserves
+  // other query params (e.g. newKey after key creation). scroll:false
+  // keeps the user's scroll position when swapping panels.
+  const setTab = useCallback(
+    (tabId: string) => {
+      const p = new URLSearchParams(search.toString());
+      p.set("tab", tabId);
+      const path = pathname ?? "/account";
+      router.push(`${path}?${p.toString()}`, { scroll: false });
+    },
+    [pathname, router, search],
+  );
 
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-3 mb-2">
-              Account
-            </div>
-            <div className="space-y-0.5">
-              {ACCOUNT_TABS.map((t) => (
-                <SidebarItem
-                  key={t.id}
-                  href={`/account?tab=${t.id}`}
-                  label={t.label}
-                  icon={t.icon}
-                  active={activeTab === t.id}
-                />
-              ))}
+  const contextValue = useMemo(() => platform, [platform]);
+
+  return (
+    <PlatformContext.Provider value={contextValue}>
+      <div className="min-h-[calc(100vh-4rem)] flex">
+        {/* SIDEBAR */}
+        <aside className="hidden md:flex md:w-64 lg:w-72 shrink-0 border-r border-border bg-card/40 flex-col">
+          <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-6">
+            {/* Overview — always first, always visible */}
+            <div>
               <SidebarItem
-                key="api"
-                href="/developer"
-                label="Developer API"
-                icon="◧"
-                highlight
+                label="Overview"
+                active={activeTab === "overview"}
+                onClick={() => setTab("overview")}
               />
             </div>
-          </div>
-        </nav>
-      </aside>
 
-      {/* MAIN */}
-      <div className="flex-1 min-w-0 flex flex-col">
-        {/* TOP BAR */}
-        <div className="border-b border-border bg-background/60 backdrop-blur">
-          <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex items-center gap-2">
-              {platformReady && (
-                <PlatformToggle platform={platform} onChange={selectPlatform} />
-              )}
+            {/* Tool categories */}
+            {TOOL_CATEGORIES.map((cat) => (
+              <div key={cat.id}>
+                <SectionHeader label={cat.label} />
+                <div className="space-y-0.5">
+                  {cat.toolIds.map((toolId) => {
+                    const tool = TOOL_META[toolId];
+                    if (!tool) return null;
+                    const supports = tool.platforms.includes(platform);
+                    return (
+                      <SidebarItem
+                        key={tool.id}
+                        label={tool.name}
+                        active={activeTab === tool.id}
+                        disabled={!supports}
+                        disabledHint={
+                          !supports ? `Not available on ${labelFor(platform)}` : undefined
+                        }
+                        onClick={() => setTab(tool.id)}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+
+            {/* Account section */}
+            <div>
+              <SectionHeader label="Account" />
+              <div className="space-y-0.5">
+                {ACCOUNT_TABS.map((t) => (
+                  <SidebarItem
+                    key={t.id}
+                    label={t.label}
+                    active={activeTab === t.id}
+                    onClick={() => setTab(t.id)}
+                  />
+                ))}
+                <SidebarItem
+                  label="Developer API"
+                  active={activeTab === "developer"}
+                  highlight
+                  onClick={() => setTab("developer")}
+                />
+              </div>
             </div>
-            <div className="flex items-center gap-4">
-              <CreditMeter used={credits.used} limit={credits.limit} tierName={credits.tierName} />
-              <UserPill user={user} />
+          </nav>
+        </aside>
+
+        {/* MAIN */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          {/* TOP BAR */}
+          <div className="border-b border-border bg-background/60 backdrop-blur">
+            <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                {platformReady && (
+                  <PlatformToggle platform={platform} onChange={selectPlatform} />
+                )}
+              </div>
+              <div className="flex items-center gap-4">
+                <CreditMeter used={credits.used} limit={credits.limit} tierName={credits.tierName} />
+                <UserPill user={user} />
+              </div>
             </div>
           </div>
+
+          {/* CONTENT */}
+          <div className="flex-1 px-4 sm:px-6 py-6 lg:py-8">{children}</div>
         </div>
-
-        {/* CONTENT */}
-        <div className="flex-1 px-4 sm:px-6 py-6 lg:py-8">{children}</div>
       </div>
+    </PlatformContext.Provider>
+  );
+}
+
+// ── Section header (bolder per user feedback) ────────────────────────────
+function SectionHeader({ label }: { label: string }) {
+  return (
+    <div className="text-[11px] font-bold uppercase tracking-wider text-foreground/70 px-3 mb-2">
+      {label}
     </div>
   );
 }
 
 // ── Sidebar item ─────────────────────────────────────────────────────────
 function SidebarItem({
-  href,
   label,
-  icon,
   active,
   disabled,
   disabledHint,
   highlight,
+  onClick,
 }: {
-  href: string;
   label: string;
-  icon?: string;
   active?: boolean;
   disabled?: boolean;
   disabledHint?: string;
   highlight?: boolean;
+  onClick?: () => void;
 }) {
-  const baseClass =
-    "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors " +
-    (active
-      ? "bg-primary/10 text-primary font-medium"
-      : highlight
-      ? "text-primary hover:bg-primary/10"
-      : "text-muted-foreground hover:text-foreground hover:bg-muted/50");
-
   if (disabled) {
     return (
       <div
         title={disabledHint}
-        className={
-          "flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground/50 cursor-not-allowed"
-        }
+        className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-foreground/30 cursor-not-allowed"
       >
-        {icon && <span className="text-xs opacity-70">{icon}</span>}
         <span className="truncate">{label}</span>
       </div>
     );
   }
+  const baseClass =
+    "w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors " +
+    (active
+      ? "bg-primary/10 text-primary"
+      : highlight
+      ? "text-primary hover:bg-primary/10"
+      : "text-foreground/80 hover:text-foreground hover:bg-muted/60");
   return (
-    <Link href={href} className={baseClass}>
-      {icon && <span className="text-xs opacity-70">{icon}</span>}
+    <button type="button" onClick={onClick} className={baseClass}>
       <span className="truncate">{label}</span>
-    </Link>
+    </button>
   );
 }
 
@@ -233,7 +262,7 @@ function PlatformToggle({
               "px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-medium transition-all " +
               (active
                 ? `${o.gradient} text-white shadow`
-                : "text-muted-foreground hover:text-foreground")
+                : "text-foreground/70 hover:text-foreground")
             }
             aria-pressed={active}
           >
@@ -264,10 +293,10 @@ function CreditMeter({
       className="hidden sm:flex items-center gap-3 rounded-full border border-border bg-card/70 px-3 py-1.5 hover:border-primary/50 transition"
     >
       <div className="text-xs">
-        <div className="font-medium tabular-nums">
+        <div className="font-semibold tabular-nums">
           {used.toLocaleString()} / {limit.toLocaleString()}
         </div>
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+        <div className="text-[10px] text-foreground/60 uppercase tracking-wider">
           {tierName} scans
         </div>
       </div>
@@ -299,12 +328,8 @@ function UserPill({ user }: { user: { email: string; name?: string; avatarUrl?: 
         </div>
       )}
       <div className="hidden md:block">
-        <div className="text-xs font-medium leading-tight">
-          {user.name ?? "Account"}
-        </div>
-        <div className="text-[10px] text-muted-foreground truncate max-w-[160px]">
-          {user.email}
-        </div>
+        <div className="text-xs font-semibold leading-tight">{user.name ?? "Account"}</div>
+        <div className="text-[10px] text-foreground/60 truncate max-w-[160px]">{user.email}</div>
       </div>
     </div>
   );

@@ -61,8 +61,7 @@ export default async function DeveloperPage({
         limit: consumerUsage.limit,
         tierName: consumerTier.name,
       }}
-      // No active-tab highlight in the Account section — DeveloperHub is
-      // its own highlighted sidebar item, not one of the Account tabs.
+      activeTab="developer"
     >
       <DeveloperHub
         keys={
