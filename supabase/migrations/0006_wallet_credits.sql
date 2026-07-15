@@ -35,12 +35,18 @@ create table wallet_credits (
   updated_at          timestamptz not null default now()
 );
 
--- Partial index: only rows still consumable. Balance queries and the
--- FIFO debit search hit this index. Skipping expired/empty rows keeps
--- it small even after years of use.
+-- Balance queries and the FIFO debit search hit this index.
+--
+-- Partial-index predicate is `credits_remaining > 0` ONLY — we can't
+-- include `expires_at > now()` because now() is not IMMUTABLE and
+-- Postgres refuses non-immutable functions in index predicates
+-- (Error 42P17). The (user_id, expires_at) columns are in the index,
+-- so expiry filtering at query time is still index-only — the missing
+-- predicate just means the index contains a few expired-but-non-empty
+-- rows, which is fine at any realistic scale.
 create index wallet_credits_active_idx
   on wallet_credits (user_id, expires_at, created_at)
-  where credits_remaining > 0 and expires_at > now();
+  where credits_remaining > 0;
 
 alter table wallet_credits enable row level security;
 
