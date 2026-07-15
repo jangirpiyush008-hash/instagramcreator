@@ -23,7 +23,7 @@ export default async function CheckoutPage({ searchParams }: PageProps) {
   }
 
   const tier = rawTier ? (CONSUMER_TIERS[rawTier] as ConsumerTier | undefined) : undefined;
-  if (!tier || tier.id === "free" || tier.priceInrPaise === 0) {
+  if (!tier || tier.id === "free" || tier.monthlyInrPaise === 0) {
     redirect("/pricing");
   }
 
@@ -33,7 +33,7 @@ export default async function CheckoutPage({ searchParams }: PageProps) {
         <div className="text-xs uppercase tracking-wider text-muted-foreground">
           Checkout
         </div>
-        <h1 className="text-2xl font-semibold">{tier.name} — {tier.priceInrDisplay}/mo</h1>
+        <h1 className="text-2xl font-semibold">{tier.name} — {tier.monthlyInrDisplay}/mo</h1>
         <p className="text-sm text-muted-foreground">
           You&apos;ll be redirected to Razorpay to complete payment. Cancel any time from
           your account dashboard.

@@ -160,15 +160,28 @@ export class RazorpayProvider implements PaymentProvider {
   }
 }
 
-// Resolves the Razorpay plan_id for a given Plan token, reading from env
-// so plan ids can rotate without a code deploy. Consumer tiers pull the
-// env var name from tiers.ts; legacy plans fall back to the original vars.
+// Resolves the Razorpay plan_id for a given Plan token, reading from env.
+// Plan tokens now encode BOTH the tier and the billing cycle:
+//   starter               → starter monthly (default cycle)
+//   starter:annual        → starter annual
+//   pro:monthly / pro:annual — same pattern
+//   monthly / annual      → legacy generic plans (kept for backward-compat)
+// Env-var lookup goes through the tier's razorpayPlanMonthlyEnv /
+// razorpayPlanAnnualEnv fields — set the env in Railway to rotate keys
+// without a code deploy.
 function resolveRazorpayPlanId(plan: Plan): string | undefined {
+  // Legacy generic plans
   if (plan === "monthly") return process.env.RAZORPAY_PLAN_MONTHLY;
   if (plan === "annual") return process.env.RAZORPAY_PLAN_ANNUAL;
-  const tier = CONSUMER_TIERS[plan] as ConsumerTier | undefined;
-  if (tier?.razorpayPlanEnv) return process.env[tier.razorpayPlanEnv];
-  return undefined;
+
+  // Parse `tier[:cycle]`. Default cycle is monthly.
+  const [tierId, cycleRaw] = plan.split(":") as [string, string | undefined];
+  const cycle: "monthly" | "annual" = cycleRaw === "annual" ? "annual" : "monthly";
+  const tier = CONSUMER_TIERS[tierId] as ConsumerTier | undefined;
+  if (!tier) return undefined;
+  const envName =
+    cycle === "annual" ? tier.razorpayPlanAnnualEnv : tier.razorpayPlanMonthlyEnv;
+  return envName ? process.env[envName] : undefined;
 }
 
 // Helper for the client-side Razorpay checkout button.
