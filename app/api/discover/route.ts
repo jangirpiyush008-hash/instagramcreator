@@ -37,6 +37,7 @@ export async function GET(req: Request) {
     followersMax: parseIntSafe(url.searchParams.get("followers_max"), undefined),
     erMin: parseFloatSafe(url.searchParams.get("er_min")),
     erMax: parseFloatSafe(url.searchParams.get("er_max")),
+    verifiedOnly: url.searchParams.get("verified_only") === "1",
   };
 
   const user = await getCurrentUser();

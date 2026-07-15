@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { EngagementCalculator } from "@/web/components/EngagementCalculator";
 
 // Landing panel for the dashboard. Consumer-focused — API-side details
 // (keys, tiers, usage log) live on the Developer tab.
@@ -68,6 +69,17 @@ export function OverviewPanel({
           value={watchlist.length}
           sub="on your watchlist"
         />
+      </div>
+
+      {/*
+        Free ER calculator, placed right below the credit-line KPI grid
+        (i.e. near the "Scans this month" card) per Piyush's request.
+        Highlighted with a primary-tinted border + "Free tool" tag so it
+        reads as a value-add, not another paid tool. No credits used
+        — pure math on user-entered numbers.
+      */}
+      <div className="rounded-2xl border-2 border-primary/40 bg-primary/5 p-2 sm:p-3">
+        <EngagementCalculator />
       </div>
 
       {/* Upgrade CTA when on Free tier */}

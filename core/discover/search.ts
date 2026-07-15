@@ -34,6 +34,7 @@ export interface SearchFilters {
   followersMax?: number;
   erMin?: number;
   erMax?: number;
+  verifiedOnly?: boolean;
   limit?: number; // capped at 50
 }
 
@@ -439,6 +440,8 @@ export async function searchCreators(
     // ER filter only excludes when we HAVE an ER value on the hit.
     if (filters.erMin != null && h.engagementRate != null && h.engagementRate < filters.erMin) return false;
     if (filters.erMax != null && h.engagementRate != null && h.engagementRate > filters.erMax) return false;
+    // Verified-only — dropped rows where the provider reported false.
+    if (filters.verifiedOnly && !h.isVerified) return false;
     return true;
   });
 

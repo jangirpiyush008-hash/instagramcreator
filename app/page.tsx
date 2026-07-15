@@ -1,9 +1,16 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ScanForm } from "@/web/components/ScanForm";
 import { EngagementCalculator } from "@/web/components/EngagementCalculator";
 import { TOOLS } from "@/core/tools/registry";
 import { ANON_LIMITS } from "@/core/billing/tiers";
+import { getCurrentUser } from "@/web/lib/supabase-server";
 import type { Platform } from "@/core/types";
+
+// The homepage is a marketing page — signed-in users don't need the
+// pitch, they want their dashboard. Redirect them straight to /account
+// so `/` never renders the hero to an authenticated user.
+export const dynamic = "force-dynamic";
 
 // Trim each tool to serializable fields before passing to client UI — the full
 // SocialTool holds a run() function that can't cross the server→client boundary.
@@ -29,7 +36,10 @@ const TOOL_META: ToolMeta[] = TOOLS.map((t) => ({
   anonAllowed: ANON_TOOLS.has(t.id),
 }));
 
-export default function HomePage() {
+export default async function HomePage() {
+  const user = await getCurrentUser().catch(() => null);
+  if (user) redirect("/account");
+
   return (
     <>
       {/* HERO */}
