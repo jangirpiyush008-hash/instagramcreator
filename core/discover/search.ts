@@ -134,15 +134,20 @@ export async function searchInstagram(query: string, limit = 20): Promise<Discov
     console.warn("[discover] HIKER_API_KEY not configured — IG search unavailable");
     return [];
   }
-  // HikerAPI search endpoint isn't in a single canonical path — the docs
-  // list variants (mobile "a1" prefix vs server v1/v2). Try each in
-  // order and keep the first that returns a non-empty user list.
+  // HikerAPI's account-search endpoints (confirmed against the live
+  // openapi.json at api.hikerapi.com/openapi.json). v2 is the current
+  // recommended path; v3 is newer, /v1/search/users is deprecated but
+  // still functional. Try in preferred order, keep the first that
+  // returns a non-empty user list.
+  //
+  // NB: search results DON'T include follower_count — that's a separate
+  // /v2/user/by/username fetch. We surface the shallow hit here (name,
+  // username, pic, verified) and skip enrichment to keep search cheap.
+  const q = encodeURIComponent(query);
   const candidatePaths = [
-    `/v1/user/search/user_v2?query=${encodeURIComponent(query)}`,
-    `/v2/user/search?query=${encodeURIComponent(query)}`,
-    `/v1/user/search?query=${encodeURIComponent(query)}`,
-    `/a1/search/users?query=${encodeURIComponent(query)}`,
-    `/a1/user/search?query=${encodeURIComponent(query)}`,
+    `/v2/fbsearch/accounts?query=${q}`,
+    `/v3/fbsearch/accounts?query=${q}`,
+    `/v1/search/users?query=${q}`,
   ];
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
@@ -209,8 +214,12 @@ function extractHikerUsers(raw: unknown): HikerUser[] {
 // ── Provider search: TikTok (tikwm) ────────────────────────────────────
 
 export async function searchTikTok(query: string, limit = 20): Promise<DiscoveryHit[]> {
-  // tikwm exposes a keyword user search — free-tier friendly.
-  const url = `https://tikwm.com/api/user/search?keywords=${encodeURIComponent(query)}&count=${limit}`;
+  // tikwm actual response shape (confirmed via live curl 2026-07):
+  //   { code: 0, data: { user_list: [{ user: {...}, stats: {...} }] } }
+  // Both `user` and `stats` sit at each user_list entry, NOT flat.
+  // Also — the working host is www.tikwm.com; the bare domain
+  // 301-redirects but that's flaky for POST-like endpoints. Use www.
+  const url = `https://www.tikwm.com/api/user/search?keywords=${encodeURIComponent(query)}&count=${limit}`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
@@ -227,17 +236,28 @@ export async function searchTikTok(query: string, limit = 20): Promise<Discovery
       return [];
     }
     const raw = (await res.json()) as unknown;
-    const users = extractTikwmUsers(raw);
-    return users.slice(0, limit).map((u) => ({
-      platform: "tiktok" as Platform,
-      handle: u.unique_id ?? u.uniqueId ?? "",
-      displayName: u.nickname,
-      bio: u.signature,
-      profilePicUrl: u.avatar_thumb ?? u.avatar,
-      isVerified: !!(u.verified ?? u.is_verified),
-      followers: Number(u.follower_count ?? u.followerCount ?? 0),
-      postCount: Number(u.aweme_count ?? 0),
-    })).filter((u) => u.handle.length > 0);
+    const entries = extractTikwmUserEntries(raw);
+    if (entries.length === 0) {
+      console.warn("[discover] tikwm TT search returned 0 entries");
+    }
+    return entries
+      .slice(0, limit)
+      .map((entry) => {
+        const u = entry.user ?? {};
+        const s = entry.stats ?? {};
+        const handle = u.unique_id ?? u.uniqueId ?? "";
+        return {
+          platform: "tiktok" as Platform,
+          handle,
+          displayName: u.nickname,
+          bio: u.signature,
+          profilePicUrl: u.avatar_thumb ?? u.avatarThumb ?? u.avatar ?? u.avatarMedium,
+          isVerified: !!(u.verified ?? u.is_verified),
+          followers: Number(s.followerCount ?? s.follower_count ?? u.followerCount ?? 0),
+          postCount: Number(s.videoCount ?? s.aweme_count ?? u.aweme_count ?? 0),
+        };
+      })
+      .filter((u) => u.handle.length > 0);
   } catch (e) {
     console.warn("[discover] tikwm TT search error:", e instanceof Error ? e.message : e);
     return [];
@@ -246,28 +266,54 @@ export async function searchTikTok(query: string, limit = 20): Promise<Discovery
   }
 }
 
-interface TikwmUser {
+interface TikwmUserInner {
+  id?: string;
   unique_id?: string;
   uniqueId?: string;
   nickname?: string;
   signature?: string;
   avatar?: string;
   avatar_thumb?: string;
+  avatarThumb?: string;
+  avatarMedium?: string;
   verified?: boolean;
   is_verified?: boolean;
-  follower_count?: number;
   followerCount?: number;
   aweme_count?: number;
 }
+interface TikwmStats {
+  followerCount?: number;
+  follower_count?: number;
+  followingCount?: number;
+  heartCount?: number;
+  videoCount?: number;
+  aweme_count?: number;
+}
+interface TikwmEntry {
+  user?: TikwmUserInner;
+  stats?: TikwmStats;
+}
 
-function extractTikwmUsers(raw: unknown): TikwmUser[] {
+// tikwm has moved the response shape over time. Handle both:
+//   - Current: data.user_list = [{ user: {...}, stats: {...} }]  (used now)
+//   - Legacy:  data.user_list = [{ ...userFieldsFlat }]           (fallback)
+function extractTikwmUserEntries(raw: unknown): TikwmEntry[] {
   if (!raw || typeof raw !== "object") return [];
   const r = raw as Record<string, unknown>;
   const data = r.data as Record<string, unknown> | undefined;
-  if (data && Array.isArray(data.user_list)) return data.user_list as TikwmUser[];
-  if (data && Array.isArray(data.users)) return data.users as TikwmUser[];
-  if (Array.isArray(r.users)) return r.users as TikwmUser[];
-  return [];
+  const list =
+    (data && Array.isArray(data.user_list) ? data.user_list : undefined) ??
+    (data && Array.isArray(data.users) ? data.users : undefined) ??
+    (Array.isArray(r.users) ? r.users : undefined) ??
+    [];
+  return (list as unknown[]).map((entry) => {
+    if (!entry || typeof entry !== "object") return {};
+    const e = entry as Record<string, unknown>;
+    // Current shape: user + stats siblings.
+    if ("user" in e) return { user: e.user as TikwmUserInner, stats: e.stats as TikwmStats };
+    // Legacy shape: fields flat on the entry itself.
+    return { user: e as TikwmUserInner };
+  });
 }
 
 // ── Provider search: YouTube (Data API v3) ─────────────────────────────
