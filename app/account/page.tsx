@@ -110,8 +110,8 @@ export default async function AccountPage({
             platform: w.platform,
             handle: w.handle,
           })),
-          // onOpenTab is wired by DashboardPanels itself (client component).
-          onOpenTab: () => undefined,
+          // No onOpenTab here — functions can't cross the server→client
+          // boundary. DashboardPanels wires setTab from useRouter itself.
         }}
         developer={{
           keys: (apiKeys ?? []).map((k) => ({

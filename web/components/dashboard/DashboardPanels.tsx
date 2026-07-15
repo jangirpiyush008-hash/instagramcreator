@@ -40,9 +40,13 @@ const TOOL_META: Record<string, ToolMeta> = Object.fromEntries(
   ]),
 );
 
+// `overview` accepts only the DATA props of OverviewPanel — never the
+// onOpenTab callback. Callbacks can't cross the server→client boundary in
+// Next.js App Router, so the server passes serializable data only and
+// DashboardPanels wires setTab in below.
 interface Props {
   activeTab: string;
-  overview: React.ComponentProps<typeof OverviewPanel>;
+  overview: Omit<React.ComponentProps<typeof OverviewPanel>, "onOpenTab">;
   developer: React.ComponentProps<typeof DeveloperHub>;
   subscriptionPanel: React.ReactNode;
   watchlistPanel: React.ReactNode;
