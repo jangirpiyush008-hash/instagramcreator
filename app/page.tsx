@@ -31,32 +31,66 @@ const TOOL_META: ToolMeta[] = TOOLS.map((t) => ({
 export default function HomePage() {
   return (
     <>
-      <section className="container pt-16 sm:pt-24 pb-12">
-        <div className="max-w-3xl mx-auto text-center space-y-6">
-          <span className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-card/60 px-3 py-1 text-xs text-muted-foreground">
-            <span className="h-1.5 w-1.5 rounded-full bg-gradient-ig" />
-            Public analytics for creators and brands
-          </span>
-          <h1 className="text-5xl sm:text-7xl font-bold tracking-tight leading-[1.05]">
-            Decode any{" "}
-            <span className="gradient-text-ig">creator</span>
+      <AnnouncementBar />
+
+      {/* HERO */}
+      <section className="container pt-10 sm:pt-16 pb-8">
+        <div className="max-w-4xl mx-auto text-center space-y-6">
+          <div className="flex flex-wrap gap-2 justify-center">
+            <Chip color="primary">✨ New: Face + bio audience demographics</Chip>
+            <Chip color="emerald">Trusted by 50+ creators &amp; brands</Chip>
+          </div>
+
+          <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.02]">
+            <span className="block">Best</span>
+            <span className="gradient-text-ig block">Instagram, TikTok &amp; YouTube</span>
+            <span className="block">Analytics Tool in 2026</span>
           </h1>
+
           <p className="text-muted-foreground text-lg sm:text-xl max-w-2xl mx-auto">
-            Engagement, audience demographics, fake-follower share, earnings — for any
-            public Instagram or TikTok account. No login required.
+            Engagement, audience demographics, fake-follower share, earnings — for any public
+            Instagram, TikTok or YouTube account. Public data only, no login required.
           </p>
         </div>
 
         <div className="max-w-2xl mx-auto mt-10">
-          <div className="rounded-2xl surface border border-border p-4 sm:p-6 shadow-2xl shadow-black/40">
+          <div className="rounded-2xl surface border border-border p-4 sm:p-6 shadow-2xl shadow-black/10 dark:shadow-black/40">
             <ScanForm />
           </div>
+          <div className="flex flex-wrap gap-3 justify-center mt-6">
+            <Link
+              href="/signup"
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-ig text-white px-6 py-3 text-sm font-medium hover:brightness-110 transition shadow-lg shadow-primary/20"
+            >
+              Start Free Trial <span aria-hidden>→</span>
+            </Link>
+            <Link
+              href="/pricing"
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-6 py-3 text-sm font-medium hover:border-primary/60 transition"
+            >
+              View Pricing
+            </Link>
+          </div>
+          <p className="text-center text-xs text-muted-foreground mt-4">
+            {ANON_LIMITS.scansPerDay} free scans a day · no card required
+          </p>
         </div>
       </section>
 
+      {/* KPI STRIP */}
+      <section className="container py-8">
+        <div className="max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
+          <Kpi value="99.9%" label="API uptime" />
+          <Kpi value="<2s" label="Median response" />
+          <Kpi value="12" label="Analytics tools" />
+          <Kpi value="3" label="Platforms" />
+        </div>
+      </section>
+
+      {/* TOOLS */}
       <section className="container py-12" id="tools">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1 text-xs uppercase tracking-wider text-muted-foreground mb-4">
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-3 py-1 text-xs uppercase tracking-wider text-muted-foreground mb-4">
             <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
             {TOOL_META.length} tools · Instagram · TikTok · YouTube
           </div>
@@ -74,6 +108,7 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* VALUE PROP */}
       <section className="container py-16">
         <div className="max-w-4xl mx-auto grid sm:grid-cols-3 gap-4 text-sm">
           <ValueCard
@@ -102,24 +137,69 @@ export default function HomePage() {
   );
 }
 
+// ── Announcement bar ─────────────────────────────────────────────────────
+// Slim strip above the header. Kept as a server component + static content
+// (no dismiss button yet — add localStorage-backed hide later if needed).
+function AnnouncementBar() {
+  return (
+    <div className="w-full bg-gradient-ig text-white text-sm">
+      <div className="container py-2 flex items-center justify-center gap-2 flex-wrap">
+        <span>🚀 API is live</span>
+        <span aria-hidden className="opacity-70">·</span>
+        <span>3,000 free credits for developers</span>
+        <Link
+          href="/docs"
+          className="underline underline-offset-2 font-medium hover:brightness-110"
+        >
+          Get your key →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// ── Trust chip (green-dot pill like GramScraper) ─────────────────────────
+function Chip({
+  children,
+  color,
+}: {
+  children: React.ReactNode;
+  color: "emerald" | "primary";
+}) {
+  const dotClass = color === "emerald" ? "bg-emerald-500" : "bg-primary";
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card/80 px-3 py-1 text-xs text-muted-foreground">
+      <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
+      {children}
+    </span>
+  );
+}
+
+// ── KPI tile ─────────────────────────────────────────────────────────────
+function Kpi({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="text-center rounded-xl border border-border bg-card/70 px-4 py-5">
+      <div className="text-3xl sm:text-4xl font-bold gradient-text-ig tabular-nums">{value}</div>
+      <div className="text-xs uppercase tracking-wider text-muted-foreground mt-1">{label}</div>
+    </div>
+  );
+}
+
+// ── Tool card (kept from earlier commit, now theme-aware via tokens) ─────
 function ToolCard({ tool }: { tool: ToolMeta }) {
-  // Every card is clickable in Phase 0 — picks a demo handle so users
-  // can see the result UI for that tool. Canonical URL uses the SEO slug.
   const demoPlatform = tool.platforms.includes("instagram") ? "instagram" : "tiktok";
   const demoHandle = "creator";
   const href = `/${demoPlatform}/${demoHandle}/${tool.slug}`;
-  // Short 1-line teaser derived from the blurb — we truncate long ones
-  // so cards stay compact instead of jumping to 4 lines.
   const teaser =
     tool.blurb.length > 90 ? tool.blurb.slice(0, 87).trimEnd() + "…" : tool.blurb;
   return (
     <Link
       href={href}
-      className="group rounded-xl border border-border/60 bg-card/40 p-5 transition-all hover:border-primary/50 hover:bg-card/70 hover:-translate-y-0.5 block relative"
+      className="group rounded-xl border border-border bg-card/60 p-5 transition-all hover:border-primary/50 hover:bg-card hover:-translate-y-0.5 block relative"
     >
       {tool.anonAllowed && (
         <span
-          className="absolute top-3 right-3 text-[10px] uppercase tracking-wider text-emerald-300/80"
+          className="absolute top-3 right-3 text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400"
           title="Try without signing in"
         >
           Free preview
@@ -132,16 +212,17 @@ function ToolCard({ tool }: { tool: ToolMeta }) {
         {tool.intentLabel}
       </div>
       <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{teaser}</p>
-      <div className="mt-3 text-xs text-primary/80 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="mt-3 text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity">
         Try it →
       </div>
     </Link>
   );
 }
 
+// ── Value card ────────────────────────────────────────────────────────────
 function ValueCard({ title, body }: { title: string; body: string }) {
   return (
-    <div className="rounded-xl border border-border bg-card/50 p-5">
+    <div className="rounded-xl border border-border bg-card/60 p-5">
       <h3 className="font-medium">{title}</h3>
       <p className="text-muted-foreground mt-1">{body}</p>
     </div>
