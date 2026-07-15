@@ -1,5 +1,6 @@
 import type { SocialTool } from "../types";
 import { enrichCommentAudience } from "@/core/data/audience-enrichment";
+import { getFaceAnalyzer } from "@/core/data/face-analyzer";
 import { adapterFor } from "@/core/data/router";
 
 // Audience gender + age split from public commenter profiles.
@@ -48,6 +49,7 @@ export const genderSplit: SocialTool = {
     }
 
     if (comments.length === 0) {
+      const faceAnalyzer = (await getFaceAnalyzer()).name;
       return {
         toolId: "gender-split",
         platform,
@@ -59,6 +61,8 @@ export const genderSplit: SocialTool = {
             "Couldn't fetch any recent commenters for this account. Comments may be disabled, or there are no recent posts.",
           malePct: null,
           femalePct: null,
+          commentsFetched: 0,
+          faceAnalyzer,
           methodology: METHODOLOGY,
           caveat: isYouTube ? YT_CAVEAT : undefined,
         },
@@ -89,12 +93,17 @@ export const genderSplit: SocialTool = {
           insufficientData: true,
           reason: `Sampled ${audience.sampleSize} commenter profiles but only resolved ${Math.round(
             (known / 100) * audience.sampleSize,
-          )} genders — not enough to publish a reliable split.`,
+          )} genders — not enough to publish a reliable split. Comments fetched: ${comments.length}.`,
           malePct: null,
           femalePct: null,
+          nonbinaryPct: null,
+          ageBrackets: null,
+          confidence: null,
           sampleSize: audience.sampleSize,
           profilesFetched: audience.profilesFetched,
+          commentsFetched: comments.length,
           signalsUsed: audience.signalsUsed,
+          faceAnalyzer: audience.faceAnalyzer,
           methodology: METHODOLOGY,
           caveat: isYouTube ? YT_CAVEAT : undefined,
         },
