@@ -34,19 +34,28 @@ interface RzpPaymentLinkResp {
 }
 
 // Create a Razorpay Payment Link — a hosted, share-able page for a
-// single one-time payment. Used for wallet top-ups: user picks a pack,
-// we create a link with the right amount, redirect them to short_url,
-// they pay, Razorpay fires payment.captured webhook AND payment_link.paid
-// webhook. We credit the wallet on either signal (idempotent by
+// single one-time payment. Used for wallet top-ups: user picks a pack
+// OR enters a custom amount, we create a link with the right amount,
+// redirect them to short_url, they pay, Razorpay fires payment.captured
+// which the webhook route uses to credit the wallet (idempotent by
 // payment_id).
+//
+// `credits` is ALWAYS embedded in notes — the webhook reads it and
+// grants that many credits. Server is the single source of truth for
+// the credit count (packs have fixed amounts; custom recharges compute
+// via creditsFromRupees). Never trust the client to specify credits.
 //
 // Docs: https://razorpay.com/docs/api/payments/payment-links/
 export async function createRazorpayPaymentLink(args: {
   userId: string;
   amountMinor: number;    // paise (INR)
+  credits: number;        // credits to grant on success — server-computed
   currency?: string;      // defaults 'INR'
   description: string;
-  packId?: string;        // wallet pack id, embedded in notes for webhook
+  // Wallet-topup source label. Format: 'topup:<packId>' for packs,
+  // 'topup:custom' for manual amounts. Embedded in notes so the webhook
+  // can label the wallet_credits row with provenance.
+  source: string;
   customerEmail?: string;
   customerName?: string;
   callbackUrl: string;    // where Razorpay redirects after payment
@@ -68,12 +77,14 @@ export async function createRazorpayPaymentLink(args: {
       },
       notify: { sms: false, email: !!args.customerEmail },
       reminder_enable: false,
-      // Notes flow through to the webhook — we use them to map
-      // payment.captured events back to the right user + wallet pack.
+      // Notes flow through to the webhook — used to map payment.captured
+      // events back to the right user + credit count. Razorpay stringifies
+      // number values, so the webhook parses `credits` as an int.
       notes: {
         userId: args.userId,
         kind: "wallet-topup",
-        packId: args.packId ?? "",
+        source: args.source,
+        credits: String(args.credits),
       },
       callback_url: args.callbackUrl,
       callback_method: "get",
@@ -177,6 +188,10 @@ export class RazorpayProvider implements PaymentProvider {
     if (evt.event === "payment.captured" || evt.event === "order.paid") {
       const p = evt.payload.payment?.entity;
       const notes = p?.notes ?? {};
+      // notes.credits comes back as a string (Razorpay stringifies numeric
+      // notes). Parse to int; downstream uses NaN-safety.
+      const creditsRaw = notes.credits;
+      const credits = creditsRaw ? Number.parseInt(creditsRaw, 10) : undefined;
       return {
         type: "payment.success",
         userId: notes.userId ?? "",
@@ -185,11 +200,12 @@ export class RazorpayProvider implements PaymentProvider {
         data: {
           paymentId: p?.id,
           amount: p?.amount,
-          // Pass through wallet-topup context so the webhook route can
-          // route a payment.captured event to creditWallet() without a
-          // second Razorpay API round-trip.
+          // Wallet-topup context. `source` is the ledger label
+          // (e.g. 'topup:topup-50' or 'topup:custom'), `credits` is the
+          // server-computed grant amount.
           kind: notes.kind,
-          packId: notes.packId,
+          source: notes.source,
+          credits: Number.isFinite(credits) ? credits : undefined,
         },
       };
     }

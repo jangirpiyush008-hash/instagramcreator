@@ -3,7 +3,6 @@ import { RazorpayProvider } from "@/core/payments/razorpay";
 import { supabaseService } from "@/core/database/supabase";
 import { PRICING } from "@/core/constants";
 import { creditWallet } from "@/core/billing/wallet";
-import { CREDIT_PACK_BY_ID } from "@/core/billing/tiers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,19 +43,20 @@ export async function POST(req: Request) {
       paymentId?: string;
       amount?: number;
       kind?: string;
-      packId?: string;
+      source?: string;
+      credits?: number;
     };
 
     // ── Wallet top-up path ───────────────────────────────────────────
-    // The Payment Link's notes carry kind='wallet-topup' + packId. We
-    // look up the pack server-side (never trust the payload's credit
-    // count) and insert a fresh wallet_credits lot. Idempotency: check
-    // for an existing lot with the same razorpay_payment_id first.
-    if (data.kind === "wallet-topup" && data.packId) {
-      const pack = CREDIT_PACK_BY_ID[data.packId];
-      if (!pack) {
-        console.warn(`[webhook] wallet-topup unknown packId: ${data.packId}`);
-        return NextResponse.json({ ok: true, ignored: "bad_pack" });
+    // Notes carry kind='wallet-topup' + source + credits. The server
+    // that CREATED the Payment Link computed `credits` (from pack data
+    // OR from creditsFromRupees for custom amounts) — the webhook
+    // trusts that number and grants it. Idempotency: skip if a lot
+    // already exists for this razorpay_payment_id.
+    if (data.kind === "wallet-topup") {
+      if (!data.credits || data.credits <= 0) {
+        console.warn("[webhook] wallet-topup missing/invalid credits in notes");
+        return NextResponse.json({ ok: true, ignored: "bad_credits" });
       }
       if (data.paymentId) {
         const { data: existing } = await supa
@@ -70,17 +70,16 @@ export async function POST(req: Request) {
       }
       const result = await creditWallet(supa, {
         userId: event.userId,
-        credits: pack.credits,
-        source: `topup:${pack.id}`,
+        credits: data.credits,
+        source: data.source ?? "topup:custom",
         razorpayPaymentId: data.paymentId,
-        amountMinor: data.amount ?? pack.amountInrPaise,
+        amountMinor: data.amount,
         currency: "INR",
       });
       if (!result.ok) {
-        // 500 so Razorpay retries — genuinely a DB failure on our side
         return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
       }
-      return NextResponse.json({ ok: true, credited: pack.credits });
+      return NextResponse.json({ ok: true, credited: data.credits });
     }
 
     // ── One-time unlock path (legacy per-report purchase) ────────────

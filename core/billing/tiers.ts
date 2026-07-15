@@ -242,6 +242,20 @@ export const CREDIT_PACK_BY_ID: Record<string, CreditPack> = Object.fromEntries(
 // expires_at column. Used by cron jobs and the wallet-balance query.
 export const WALLET_CREDIT_VALIDITY_MONTHS = 12;
 
+// Manual (custom-amount) recharge parameters. Used when a caller wants
+// to pay a specific ₹ amount instead of picking a pre-set pack. Rate
+// is deliberately baseline (no bulk discount) — bulk savings come from
+// the packs so users have a real incentive to pick a pack for larger
+// amounts.
+export const WALLET_MIN_MANUAL_INR = 500;         // rupees
+export const WALLET_MAX_MANUAL_INR = 100_000;     // rupees — sanity cap
+export const WALLET_CREDITS_PER_RUPEE = 2.4;      // ₹0.42 per credit
+
+export function creditsFromRupees(rupees: number): number {
+  if (!Number.isFinite(rupees) || rupees <= 0) return 0;
+  return Math.floor(rupees * WALLET_CREDITS_PER_RUPEE);
+}
+
 // ── Anonymous limits (pre-signup) ───────────────────────────────────────
 export const ANON_LIMITS = {
   scansPerDay: 5,
