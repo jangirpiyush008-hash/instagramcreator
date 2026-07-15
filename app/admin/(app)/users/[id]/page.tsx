@@ -36,7 +36,7 @@ async function loadUser(id: string) {
       .order("created_at", { ascending: false }),
     supa
       .from("wallet_lots")
-      .select("id, credits_remaining, credits_original, source, created_at, expires_at")
+      .select("id, credits_remaining, credits_original, source, created_at, expires_at, razorpay_payment_id")
       .eq("user_id", id)
       .order("created_at", { ascending: false })
       .limit(50),
@@ -145,6 +145,20 @@ export default async function AdminUserDetailPage({
 
           <Section title="Subscription">
             <PlanChangeForm userId={id} currentPlan={activeSub?.plan ?? null} />
+          </Section>
+
+          <Section title="Razorpay payments (from wallet history)">
+            <RazorpayPaymentList
+              rows={walletLots
+                .filter((w) => w.razorpay_payment_id)
+                .map((w) => ({
+                  paymentId: w.razorpay_payment_id!,
+                  creditsOriginal: Number(w.credits_original ?? 0),
+                  source: w.source ?? "—",
+                  createdAt: w.created_at,
+                }))}
+              userDetailPath={`/admin/users/${id}?seg=${seg}`}
+            />
           </Section>
 
           <Section title="Razorpay refund">
@@ -335,4 +349,61 @@ function KV({ k, v }: { k: string; v: string }) {
 
 function Empty({ text }: { text: string }) {
   return <div className="text-sm text-muted-foreground italic">{text}</div>;
+}
+
+// ── Razorpay payments list — one row per wallet_lot with a payment id.
+// "Refund" adds ?payment_id=pay_XXX to the URL, which RefundForm reads
+// via useSearchParams and pre-fills. Then scrolls to the refund form.
+function RazorpayPaymentList({
+  rows,
+  userDetailPath,
+}: {
+  rows: { paymentId: string; creditsOriginal: number; source: string; createdAt: string }[];
+  userDetailPath: string;
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="text-sm text-neutral-500 italic">
+        No Razorpay payments captured yet. Payment IDs land here
+        automatically when the customer tops up their wallet or
+        subscribes via Razorpay.
+      </div>
+    );
+  }
+  return (
+    <ul className="space-y-2 text-sm">
+      {rows.map((r) => (
+        <li
+          key={r.paymentId}
+          className="rounded-lg border border-neutral-200 p-3 flex flex-wrap items-center justify-between gap-3"
+        >
+          <div className="min-w-0">
+            <a
+              href={`https://dashboard.razorpay.com/app/payments/${r.paymentId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-xs text-neutral-900 underline underline-offset-2 hover:text-primary break-all"
+            >
+              {r.paymentId}
+            </a>
+            <div className="text-[11px] text-neutral-500 mt-0.5">
+              {r.source} · {r.creditsOriginal.toLocaleString()} credits ·{" "}
+              {new Date(r.createdAt).toLocaleDateString()}
+            </div>
+          </div>
+          {/*
+            Same page — just appends ?payment_id=X so RefundForm's
+            useEffect picks it up and scrolls into view. No modal, no
+            state plumbing across sections.
+          */}
+          <a
+            href={`${userDetailPath}&payment_id=${r.paymentId}#refund-form-section`}
+            className="text-xs font-medium px-3 py-1.5 rounded-md border border-red-300 text-red-600 hover:bg-red-50 transition-colors"
+          >
+            Refund →
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
 }

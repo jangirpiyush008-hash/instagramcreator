@@ -5,13 +5,18 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 import { cn } from "@/web/lib/cn";
 
-// Admin panel chrome — LIGHT theme only per owner request.
-// Left sidebar navigation is grouped by segment so any consumer or
-// developer action is one click from the sidebar (no top-bar hunting).
-// Top bar keeps the Consumers ↔ Developers toggle on the right for
-// quick segment switching from any page.
+// Admin panel chrome — LIGHT theme only. Top bar has a 3-way segment
+// toggle: Consumers | Developers | Growth. Switching segments ALWAYS
+// takes you back to /admin (Overview) — owner request. That keeps the
+// mental model "pick your context, then drill in" instead of the URL
+// carrying stale filters across contexts.
+//
+// Sidebar changes shape per segment:
+//   Consumers  → All / Active subscribers / Free tier / + Add consumer
+//   Developers → All / By wallet / By usage / + Add developer
+//   Growth     → All orders / Awaiting / Paid / Delivered
 
-type Segment = "consumers" | "developers";
+type Segment = "consumers" | "developers" | "growth";
 
 interface NavItem {
   href: string;
@@ -24,34 +29,48 @@ interface NavGroup {
 }
 
 function navFor(seg: Segment): NavGroup[] {
+  const overview: NavGroup = {
+    items: [{ href: `/admin?seg=${seg}`, label: "Overview", exact: true }],
+  };
+  if (seg === "growth") {
+    return [
+      overview,
+      {
+        title: "Growth orders",
+        items: [
+          { href: "/admin/orders?seg=growth", label: "All orders" },
+          { href: "/admin/orders?seg=growth&status=awaiting_payment", label: "Awaiting payment" },
+          { href: "/admin/orders?seg=growth&status=paid", label: "Paid — needs delivery" },
+          { href: "/admin/orders?seg=growth&status=delivered", label: "Delivered" },
+          { href: "/admin/orders?seg=growth&status=failed", label: "Failed" },
+        ],
+      },
+    ];
+  }
+  if (seg === "consumers") {
+    return [
+      overview,
+      {
+        title: "Consumers",
+        items: [
+          { href: `/admin/users?seg=consumers`, label: "All consumers" },
+          { href: `/admin/users?seg=consumers&status=active`, label: "Active subscribers" },
+          { href: `/admin/users?seg=consumers&status=free`, label: "Free tier" },
+          { href: `/admin/users/new?seg=consumers`, label: "+ Add consumer" },
+        ],
+      },
+    ];
+  }
+  // developers
   return [
+    overview,
     {
-      items: [{ href: "/admin", label: "Overview", exact: true }],
-    },
-    {
-      title: seg === "consumers" ? "Consumers" : "Developers",
-      items:
-        seg === "consumers"
-          ? [
-              { href: `/admin/users?seg=consumers`, label: "All consumers" },
-              { href: `/admin/users?seg=consumers&status=active`, label: "Active subscribers" },
-              { href: `/admin/users?seg=consumers&status=free`, label: "Free tier" },
-              { href: `/admin/users/new?seg=consumers`, label: "+ Add consumer" },
-            ]
-          : [
-              { href: `/admin/users?seg=developers`, label: "All developers" },
-              { href: `/admin/users?seg=developers&sort=wallet`, label: "By wallet balance" },
-              { href: `/admin/users?seg=developers&sort=usage`, label: "By API usage" },
-              { href: `/admin/users/new?seg=developers`, label: "+ Add developer" },
-            ],
-    },
-    {
-      title: "Growth (separate)",
+      title: "Developers",
       items: [
-        { href: "/admin/orders", label: "All orders" },
-        { href: "/admin/orders?status=awaiting_payment", label: "Awaiting payment" },
-        { href: "/admin/orders?status=paid", label: "Paid — needs delivery" },
-        { href: "/admin/orders?status=delivered", label: "Delivered" },
+        { href: `/admin/users?seg=developers`, label: "All developers" },
+        { href: `/admin/users?seg=developers&sort=wallet`, label: "By wallet balance" },
+        { href: `/admin/users?seg=developers&sort=usage`, label: "By API usage" },
+        { href: `/admin/users/new?seg=developers`, label: "+ Add developer" },
       ],
     },
   ];
@@ -61,15 +80,17 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? "/admin";
   const search = useSearchParams();
   const router = useRouter();
-  const seg: Segment = (search.get("seg") as Segment) === "developers" ? "developers" : "consumers";
+  const seg: Segment = parseSeg(search.get("seg"));
 
+  // Segment switch ALWAYS lands on /admin (Overview) per owner
+  // request. Keeps the flow: pick context first, then drill in from
+  // the sidebar. Prevents stale filters from a previous segment
+  // leaking into the new one.
   const setSeg = useCallback(
     (next: Segment) => {
-      const p = new URLSearchParams(search.toString());
-      p.set("seg", next);
-      router.push(`${pathname}?${p.toString()}`, { scroll: false });
+      router.push(`/admin?seg=${next}`, { scroll: false });
     },
-    [pathname, router, search],
+    [router],
   );
 
   const logout = useCallback(async () => {
@@ -138,13 +159,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
       {/* MAIN */}
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* TOP BAR — segment toggle on the right */}
+        {/* TOP BAR — 3-way segment toggle on the right */}
         <div className="border-b border-neutral-200 bg-white">
           <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
             <div className="text-xs text-neutral-500">
-              {seg === "consumers"
-                ? "Viewing consumer web-app users"
-                : "Viewing API developers + wallet balances"}
+              {seg === "consumers" && "Viewing consumer web-app users"}
+              {seg === "developers" && "Viewing API developers + wallet balances"}
+              {seg === "growth" && "Viewing growth-services orders (SMM vertical)"}
             </div>
             <SegmentToggle seg={seg} onChange={setSeg} />
           </div>
@@ -155,6 +176,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       </div>
     </div>
   );
+}
+
+function parseSeg(raw: string | null): Segment {
+  if (raw === "developers") return "developers";
+  if (raw === "growth") return "growth";
+  return "consumers";
 }
 
 // Match "active" based on pathname AND a subset of the query params
@@ -171,11 +198,12 @@ function isActive(pathname: string, currentSearch: URLSearchParams, item: NavIte
   return true;
 }
 
-// ── Segment toggle ─────────────────────────────────────────────────────
+// ── Segment toggle: 3-way ─────────────────────────────────────────────
 function SegmentToggle({ seg, onChange }: { seg: Segment; onChange: (s: Segment) => void }) {
   const opts: { id: Segment; label: string; icon: string }[] = [
     { id: "consumers", label: "Consumers", icon: "👥" },
     { id: "developers", label: "Developers", icon: "🧑‍💻" },
+    { id: "growth", label: "Growth", icon: "📈" },
   ];
   return (
     <div className="inline-flex items-center rounded-full border border-neutral-200 bg-white p-1 shadow-sm">

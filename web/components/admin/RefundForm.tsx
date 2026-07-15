@@ -1,17 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/web/lib/cn";
 
 // Initiates a REAL Razorpay refund via POST /api/admin/refund.
-// Takes a payment_id (pay_XXX from Razorpay dashboard or from
-// wallet_lots.source / subscriptions rows) and optional amount +
-// note. Empty amount = full refund.
+// Takes a payment_id (pay_XXX from Razorpay dashboard, wallet_lots
+// razorpay_payment_id column, or the Payment History section on the
+// user detail page) and optional amount + note. Empty amount = full.
+//
+// Pre-fills from ?payment_id=pay_XXX + ?amount_inr=NNN in the URL
+// so the "Refund this" link on Payment History rows can pass the
+// payment through. Also auto-scrolls into view when a prefill happens.
 //
 // Because refunds are irreversible we show a confirm banner before
 // the button becomes clickable.
 
 export function RefundForm() {
+  const search = useSearchParams();
   const [paymentId, setPaymentId] = useState("");
   const [amountInr, setAmountInr] = useState("");
   const [note, setNote] = useState("");
@@ -53,13 +59,30 @@ export function RefundForm() {
     }
   };
 
+  // Pre-fill from URL query params (set by the Payment History rows)
+  // and scroll into view. Only runs when the values actually change so
+  // manual edits from the user aren't overwritten on every re-render.
+  useEffect(() => {
+    const pid = search.get("payment_id");
+    const amt = search.get("amount_inr");
+    if (pid && /^pay_[A-Za-z0-9]{8,}$/.test(pid)) {
+      setPaymentId(pid);
+      if (amt) setAmountInr(amt);
+      // Delay slightly so the section is definitely rendered.
+      setTimeout(() => {
+        document.getElementById("refund-form-section")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 100);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.get("payment_id"), search.get("amount_inr")]);
+
   const canSubmit =
     /^pay_[A-Za-z0-9]{8,}$/.test(paymentId.trim()) &&
     confirmed &&
     !busy;
 
   return (
-    <div className="space-y-3">
+    <div id="refund-form-section" className="space-y-3">
       <label className="block">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 mb-1">
           Razorpay payment ID

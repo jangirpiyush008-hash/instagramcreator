@@ -46,21 +46,60 @@ async function loadDeveloperKpis() {
   return { developerCount, apiKeys: apiKeys ?? 0, walletTotal };
 }
 
+async function loadGrowthKpis() {
+  const supa = supabaseService();
+  const [
+    { count: awaiting },
+    { count: paid },
+    { count: delivered },
+    { count: failed },
+    { data: paidRev },
+  ] = await Promise.all([
+    supa
+      .from("service_orders")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["awaiting_payment", "verifying"]),
+    supa
+      .from("service_orders")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["paid", "fulfilling"]),
+    supa
+      .from("service_orders")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "delivered"),
+    supa
+      .from("service_orders")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "failed"),
+    supa
+      .from("service_orders")
+      .select("total_usd")
+      .in("status", ["paid", "fulfilling", "delivered"])
+      .limit(1000),
+  ]);
+  const revenueUsd = (paidRev ?? []).reduce((acc, r) => acc + Number(r.total_usd ?? 0), 0);
+  return {
+    awaiting: awaiting ?? 0,
+    paid: paid ?? 0,
+    delivered: delivered ?? 0,
+    failed: failed ?? 0,
+    revenueUsd,
+  };
+}
+
 export default async function AdminOverviewPage({
   searchParams,
 }: {
   searchParams: Promise<{ seg?: string }>;
 }) {
   const { seg: segRaw = "consumers" } = await searchParams;
-  const seg = segRaw === "developers" ? "developers" : "consumers";
+  const seg: "consumers" | "developers" | "growth" =
+    segRaw === "developers" ? "developers" : segRaw === "growth" ? "growth" : "consumers";
 
-  const [consumer, developer] = await Promise.all([
-    seg === "consumers"
-      ? loadConsumerKpis().catch(() => null)
-      : Promise.resolve(null),
-    seg === "developers"
-      ? loadDeveloperKpis().catch(() => null)
-      : Promise.resolve(null),
+  const [consumer, developer, growth] = await Promise.all([
+    seg === "consumers" ? loadConsumerKpis().catch(() => null) : Promise.resolve(null),
+    seg === "developers" ? loadDeveloperKpis().catch(() => null) : Promise.resolve(null),
+    seg === "growth" ? loadGrowthKpis().catch(() => null) : Promise.resolve(null),
   ]);
 
   return (
@@ -68,59 +107,97 @@ export default async function AdminOverviewPage({
       <header className="mb-6">
         <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
         <p className="text-sm text-neutral-500 mt-1">
-          {seg === "consumers"
-            ? "Web-app users and subscriptions."
-            : "API developers with active keys and outstanding wallet credits."}
+          {seg === "consumers" && "Web-app users and subscriptions."}
+          {seg === "developers" && "API developers with active keys and outstanding wallet credits."}
+          {seg === "growth" && "Growth-services (SMM vertical) order flow."}
         </p>
       </header>
 
-      {seg === "consumers" ? (
-        consumer === null ? (
-          <ErrorCard />
-        ) : (
+      {seg === "consumers" && (
+        consumer === null ? <ErrorCard /> : (
           <div className="grid grid-cols-2 md:grid-cols-2 gap-3 mb-8 max-w-3xl">
             <KpiCard label="Total users" value={consumer.users.toLocaleString()} sub="signed-up accounts" />
-            <KpiCard
-              label="Active subscriptions"
-              value={consumer.activeSubs.toLocaleString()}
-              sub="paying consumers"
-            />
+            <KpiCard label="Active subscriptions" value={consumer.activeSubs.toLocaleString()} sub="paying consumers" />
           </div>
         )
-      ) : developer === null ? (
-        <ErrorCard />
-      ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
-          <KpiCard label="Developers" value={developer.developerCount.toLocaleString()} sub="users with active keys" />
-          <KpiCard label="Active API keys" value={developer.apiKeys.toLocaleString()} sub="not revoked" />
-          <KpiCard
-            label="Wallet credits outstanding"
-            value={developer.walletTotal.toLocaleString()}
-            sub="unspent across all developers"
-          />
-        </div>
       )}
 
-      {/* Quick links — kept lean now that KPI clutter is gone */}
+      {seg === "developers" && (
+        developer === null ? <ErrorCard /> : (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
+            <KpiCard label="Developers" value={developer.developerCount.toLocaleString()} sub="users with active keys" />
+            <KpiCard label="Active API keys" value={developer.apiKeys.toLocaleString()} sub="not revoked" />
+            <KpiCard label="Wallet credits outstanding" value={developer.walletTotal.toLocaleString()} sub="unspent across all developers" />
+          </div>
+        )
+      )}
+
+      {seg === "growth" && (
+        growth === null ? <ErrorCard /> : (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
+            <KpiCard label="Awaiting payment" value={growth.awaiting.toLocaleString()} sub="pending USDT" highlight={growth.awaiting > 0} />
+            <KpiCard label="Paid — needs delivery" value={growth.paid.toLocaleString()} sub="verify + fulfill" highlight={growth.paid > 0} />
+            <KpiCard label="Delivered" value={growth.delivered.toLocaleString()} sub="lifetime" />
+            <KpiCard label="Failed" value={growth.failed.toLocaleString()} sub="lifetime" />
+            <KpiCard label="Revenue" value={`$${growth.revenueUsd.toFixed(2)}`} sub="paid orders total (USD)" />
+          </div>
+        )
+      )}
+
+      {/* Quick links — segment-appropriate */}
       <div className="grid sm:grid-cols-2 gap-3 max-w-3xl">
-        <QuickCard
-          href={`/admin/users?seg=${seg}`}
-          title={seg === "consumers" ? "Manage consumers" : "Manage developers"}
-          blurb="Full list, tier + credits, per-user detail with actions."
-        />
-        <QuickCard
-          href={`/admin/users/new?seg=${seg}`}
-          title="Add a user"
-          blurb="Comp a customer, onboard a pilot, or invite by email."
-        />
+        {seg !== "growth" ? (
+          <>
+            <QuickCard
+              href={`/admin/users?seg=${seg}`}
+              title={seg === "consumers" ? "Manage consumers" : "Manage developers"}
+              blurb="Full list, tier + credits, per-user detail with actions."
+            />
+            <QuickCard
+              href={`/admin/users/new?seg=${seg}`}
+              title="Add a user"
+              blurb="Comp a customer, onboard a pilot, or invite by email."
+            />
+          </>
+        ) : (
+          <>
+            <QuickCard
+              href="/admin/orders?seg=growth&status=awaiting_payment"
+              title="Awaiting payment"
+              blurb="Orders where the customer hasn't submitted a tx hash yet."
+            />
+            <QuickCard
+              href="/admin/orders?seg=growth&status=paid"
+              title="Paid — needs delivery"
+              blurb="Verify + mark fulfilled once the supplier panel delivers."
+            />
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-function KpiCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function KpiCard({
+  label,
+  value,
+  sub,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  highlight?: boolean;
+}) {
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-4">
+    <div
+      className={
+        "rounded-xl border p-4 " +
+        (highlight
+          ? "border-amber-300 bg-amber-50"
+          : "border-neutral-200 bg-white")
+      }
+    >
       <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">
         {label}
       </div>
