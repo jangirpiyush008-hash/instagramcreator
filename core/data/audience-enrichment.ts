@@ -62,7 +62,9 @@ export async function enrichCommentAudience(
 ): Promise<EnrichedAudience> {
   const maxProfiles = opts.maxProfiles ?? 25;
   const runFace = opts.runFaceAnalysis ?? true;
-  const analyzer = getFaceAnalyzer();
+  // Async because face-analyzer.ts lazy-imports the AWS impl (keeps
+  // node:crypto out of the client bundle). Mock path resolves instantly.
+  const analyzer = await getFaceAnalyzer();
 
   // Dedupe by username — a user commenting 5 times still counts as one
   // audience member. Preserve first-seen order so the sample is

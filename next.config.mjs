@@ -11,6 +11,28 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // Node built-ins that some server-only code transitively touches
+  // (e.g. face-analyzer-aws.ts imports 'node:crypto' for SigV4). The
+  // tool registry is imported by client components for metadata, which
+  // drags the full server-side tool tree into the client dependency
+  // graph. This fallback tells webpack to substitute an empty stub for
+  // `node:*` in browser bundles — the actual code that uses these
+  // modules never runs in the browser, so no runtime error.
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve = config.resolve ?? {};
+      config.resolve.fallback = {
+        ...(config.resolve.fallback ?? {}),
+        crypto: false,
+        stream: false,
+        buffer: false,
+        util: false,
+        os: false,
+        path: false,
+      };
+    }
+    return config;
+  },
   async headers() {
     return [
       {
