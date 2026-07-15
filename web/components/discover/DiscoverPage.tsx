@@ -6,6 +6,18 @@ import { cn } from "@/web/lib/cn";
 import type { Platform } from "@/core/types";
 import type { DiscoveryHit } from "@/core/discover/search";
 
+// Shape of a post returned by /api/discover/enrich.
+interface DiscoveryPost {
+  id: string;
+  thumbnailUrl: string | null;
+  likes: number;
+  comments: number;
+  views: number | null;
+  caption: string;
+  permalink: string | null;
+  postedAt: string;
+}
+
 // Client-side Discover UI. Talks to /api/discover, renders results in a
 // grid, supports filter panel + client-side refinements.
 //
@@ -476,6 +488,42 @@ function CreatorCard({
   onSave: () => void;
 }) {
   const cfg = PLATFORM_CFG[hit.platform];
+
+  // Recent-posts enrichment — lazy. Fetched on first "Show posts" click,
+  // cached in creator_index server-side so subsequent searches for the
+  // same creator show them inline without another API call.
+  const [posts, setPosts] = useState<DiscoveryPost[] | null>(null);
+  const [postsLoading, setPostsLoading] = useState(false);
+  const [postsErr, setPostsErr] = useState<string | null>(null);
+  const [postsOpen, setPostsOpen] = useState(false);
+
+  const togglePosts = async () => {
+    if (posts !== null || postsLoading) {
+      setPostsOpen((v) => !v);
+      return;
+    }
+    setPostsOpen(true);
+    setPostsLoading(true);
+    setPostsErr(null);
+    try {
+      const res = await fetch(
+        `/api/discover/enrich?platform=${hit.platform}&handle=${encodeURIComponent(hit.handle)}&n=6`,
+        { cache: "no-store" },
+      );
+      const body = (await res.json()) as { ok: boolean; posts?: DiscoveryPost[]; error?: string };
+      if (!body.ok || !Array.isArray(body.posts)) {
+        setPostsErr(body.error ?? "Couldn't load posts");
+        setPosts([]);
+      } else {
+        setPosts(body.posts);
+      }
+    } catch (e) {
+      setPostsErr(e instanceof Error ? e.message : "Network error");
+      setPosts([]);
+    } finally {
+      setPostsLoading(false);
+    }
+  };
   return (
     <div className="rounded-xl border border-border bg-card/60 p-4 hover:border-primary/50 transition-colors">
       <div className="flex items-start gap-3">
@@ -528,12 +576,22 @@ function CreatorCard({
       </div>
 
       <div className="mt-4 flex gap-2">
-        <Link
-          href={`/${hit.platform}/${encodeURIComponent(hit.handle)}`}
-          className="flex-1 text-center text-xs font-medium px-3 py-2 rounded-lg border border-border hover:bg-muted transition-colors"
+        <button
+          type="button"
+          onClick={togglePosts}
+          className={cn(
+            "flex-1 text-xs font-medium px-3 py-2 rounded-lg border border-border hover:bg-muted transition-colors",
+            postsOpen && "bg-muted",
+          )}
         >
-          View profile
-        </Link>
+          {postsLoading
+            ? "Loading…"
+            : postsOpen
+              ? "Hide posts"
+              : posts && posts.length > 0
+                ? `Show ${posts.length} posts`
+                : "Show posts"}
+        </button>
         <button
           type="button"
           onClick={onSave}
@@ -550,6 +608,65 @@ function CreatorCard({
           {saveState === "saved" ? "Saved ✓" : saveState === "saving" ? "Saving…" : "Save"}
         </button>
       </div>
+
+      {/* Inline posts strip — lazy loaded on the Show posts click. */}
+      {postsOpen && (
+        <div className="mt-3 pt-3 border-t border-border/60">
+          {postsLoading && (
+            <div className="text-[11px] text-muted-foreground py-4 text-center">
+              Fetching recent posts…
+            </div>
+          )}
+          {postsErr && (
+            <div className="text-[11px] text-destructive py-2">{postsErr}</div>
+          )}
+          {posts && posts.length === 0 && !postsErr && (
+            <div className="text-[11px] text-muted-foreground italic py-2">
+              No recent posts returned by the provider.
+            </div>
+          )}
+          {posts && posts.length > 0 && (
+            <>
+              <div className="grid grid-cols-3 gap-1.5">
+                {posts.slice(0, 6).map((p) => (
+                  <a
+                    key={p.id}
+                    href={p.permalink ?? undefined}
+                    target={p.permalink ? "_blank" : undefined}
+                    rel={p.permalink ? "noopener noreferrer" : undefined}
+                    className="relative aspect-square rounded-md overflow-hidden bg-muted group"
+                    title={p.caption}
+                  >
+                    {p.thumbnailUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={p.thumbnailUrl}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                    ) : (
+                      <div className="w-full h-full grid place-items-center text-[10px] text-muted-foreground">
+                        no thumb
+                      </div>
+                    )}
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1 text-[9px] text-white font-medium tabular-nums flex justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span>❤ {fmtNum(p.likes)}</span>
+                      {p.views != null && <span>▶ {fmtNum(p.views)}</span>}
+                    </div>
+                  </a>
+                ))}
+              </div>
+              <Link
+                href={`/${hit.platform}/${encodeURIComponent(hit.handle)}`}
+                className="mt-2 block text-center text-[11px] text-primary font-medium hover:underline"
+              >
+                View full profile scan →
+              </Link>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
