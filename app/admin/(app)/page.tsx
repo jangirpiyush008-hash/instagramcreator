@@ -8,57 +8,42 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
 };
 
-// Overview KPI cards. All queries are COUNT-only so this page stays
-// fast even at 10k+ rows. Numbers refresh on every visit — no cache.
+// Overview KPI cards. Segment-scoped per owner request:
+//   Consumers  → Total users + Active subscriptions (that's it — no
+//                growth-orders, no api-keys, no wallet noise here)
+//   Developers → Total developers + Active API keys + Wallet outstanding
+// Growth orders info lives ONLY on /admin/orders now.
 
-async function loadKpis() {
+async function loadConsumerKpis() {
   const supa = supabaseService();
-  const [
-    { count: users },
-    { count: activeSubs },
-    { count: apiKeys },
-    { count: pendingOrders },
-    { count: paidOrders },
-    { data: walletSum },
-  ] = await Promise.all([
+  const [{ count: users }, { count: activeSubs }] = await Promise.all([
     supa.from("profiles").select("id", { count: "exact", head: true }),
     supa
       .from("subscriptions")
       .select("id", { count: "exact", head: true })
       .eq("status", "active"),
-    supa
-      .from("api_keys")
-      .select("id", { count: "exact", head: true })
-      .is("revoked_at", null),
-    supa
-      .from("service_orders")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "awaiting_payment"),
-    supa
-      .from("service_orders")
-      .select("id", { count: "exact", head: true })
-      .in("status", ["paid", "fulfilling", "delivered"]),
-    // Sum of unspent wallet credits — approximation via SQL is best but
-    // we don't have a view yet. Fetch aggregated sum via rpc-less
-    // approach (client-side sum on limit 1000; fine for now).
+  ]);
+  return { users: users ?? 0, activeSubs: activeSubs ?? 0 };
+}
+
+async function loadDeveloperKpis() {
+  const supa = supabaseService();
+  // Distinct users with at least one active key = the "developer" count.
+  const [{ data: keyOwners }, { count: apiKeys }, { data: walletSum }] = await Promise.all([
+    supa.from("api_keys").select("user_id").is("revoked_at", null),
+    supa.from("api_keys").select("id", { count: "exact", head: true }).is("revoked_at", null),
     supa
       .from("wallet_lots")
       .select("credits_remaining")
       .gt("credits_remaining", 0)
       .limit(1000),
   ]);
+  const developerCount = new Set((keyOwners ?? []).map((k) => k.user_id)).size;
   const walletTotal = (walletSum ?? []).reduce(
     (acc, r) => acc + Number(r.credits_remaining ?? 0),
     0,
   );
-  return {
-    users: users ?? 0,
-    activeSubs: activeSubs ?? 0,
-    apiKeys: apiKeys ?? 0,
-    pendingOrders: pendingOrders ?? 0,
-    paidOrders: paidOrders ?? 0,
-    walletTotal,
-  };
+  return { developerCount, apiKeys: apiKeys ?? 0, walletTotal };
 }
 
 export default async function AdminOverviewPage({
@@ -66,107 +51,81 @@ export default async function AdminOverviewPage({
 }: {
   searchParams: Promise<{ seg?: string }>;
 }) {
-  const { seg = "consumers" } = await searchParams;
-  const kpi = await loadKpis().catch((e) => {
-    console.error("[admin/overview] load failed:", e);
-    return null;
-  });
+  const { seg: segRaw = "consumers" } = await searchParams;
+  const seg = segRaw === "developers" ? "developers" : "consumers";
+
+  const [consumer, developer] = await Promise.all([
+    seg === "consumers"
+      ? loadConsumerKpis().catch(() => null)
+      : Promise.resolve(null),
+    seg === "developers"
+      ? loadDeveloperKpis().catch(() => null)
+      : Promise.resolve(null),
+  ]);
 
   return (
     <div className="max-w-6xl">
       <header className="mb-6">
         <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="text-sm text-neutral-500 mt-1">
           {seg === "consumers"
-            ? "Web-app users, subscriptions, and scan usage across the platform."
-            : "API developers, active keys, wallet balances, and order flow."}
+            ? "Web-app users and subscriptions."
+            : "API developers with active keys and outstanding wallet credits."}
         </p>
       </header>
 
-      {kpi === null ? (
-        <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-          Couldn&apos;t load KPIs. Check that Supabase env vars are set and
-          all migrations (through 0009) have run.
-        </div>
+      {seg === "consumers" ? (
+        consumer === null ? (
+          <ErrorCard />
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-2 gap-3 mb-8 max-w-3xl">
+            <KpiCard label="Total users" value={consumer.users.toLocaleString()} sub="signed-up accounts" />
+            <KpiCard
+              label="Active subscriptions"
+              value={consumer.activeSubs.toLocaleString()}
+              sub="paying consumers"
+            />
+          </div>
+        )
+      ) : developer === null ? (
+        <ErrorCard />
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
-          <KpiCard label="Total users" value={kpi.users.toLocaleString()} sub="signed-up accounts" />
-          <KpiCard
-            label="Active subscriptions"
-            value={kpi.activeSubs.toLocaleString()}
-            sub="Consumer + API tiers"
-          />
-          <KpiCard
-            label="Active API keys"
-            value={kpi.apiKeys.toLocaleString()}
-            sub="not revoked"
-          />
+          <KpiCard label="Developers" value={developer.developerCount.toLocaleString()} sub="users with active keys" />
+          <KpiCard label="Active API keys" value={developer.apiKeys.toLocaleString()} sub="not revoked" />
           <KpiCard
             label="Wallet credits outstanding"
-            value={kpi.walletTotal.toLocaleString()}
-            sub="unspent across all users"
-          />
-          <KpiCard
-            label="Growth orders pending"
-            value={kpi.pendingOrders.toLocaleString()}
-            sub="awaiting USDT payment"
-            highlight={kpi.pendingOrders > 0}
-          />
-          <KpiCard
-            label="Growth orders paid"
-            value={kpi.paidOrders.toLocaleString()}
-            sub="lifetime"
+            value={developer.walletTotal.toLocaleString()}
+            sub="unspent across all developers"
           />
         </div>
       )}
 
-      {/* Quick links */}
-      <div className="grid sm:grid-cols-3 gap-3">
+      {/* Quick links — kept lean now that KPI clutter is gone */}
+      <div className="grid sm:grid-cols-2 gap-3 max-w-3xl">
         <QuickCard
           href={`/admin/users?seg=${seg}`}
-          title={seg === "consumers" ? "Manage users" : "Manage developers"}
-          blurb="Full list, tier + credits, per-user detail page."
+          title={seg === "consumers" ? "Manage consumers" : "Manage developers"}
+          blurb="Full list, tier + credits, per-user detail with actions."
         />
         <QuickCard
-          href="/admin/orders"
-          title="Growth orders"
-          blurb="Verify payments, mark fulfilled, review failures."
-        />
-        <QuickCard
-          href="/admin/login"
-          title="Rotate password"
-          blurb="Update ADMIN_PASSWORD env var in Railway to invalidate this session."
+          href={`/admin/users/new?seg=${seg}`}
+          title="Add a user"
+          blurb="Comp a customer, onboard a pilot, or invite by email."
         />
       </div>
     </div>
   );
 }
 
-function KpiCard({
-  label,
-  value,
-  sub,
-  highlight,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  highlight?: boolean;
-}) {
+function KpiCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div
-      className={
-        "rounded-xl border p-4 " +
-        (highlight
-          ? "border-amber-500/40 bg-amber-500/5"
-          : "border-border bg-card/50")
-      }
-    >
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+    <div className="rounded-xl border border-neutral-200 bg-white p-4">
+      <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">
         {label}
       </div>
-      <div className="text-2xl font-bold tabular-nums mt-1">{value}</div>
-      {sub && <div className="text-xs text-muted-foreground mt-1">{sub}</div>}
+      <div className="text-2xl font-bold tabular-nums mt-1 text-neutral-900">{value}</div>
+      {sub && <div className="text-xs text-neutral-500 mt-1">{sub}</div>}
     </div>
   );
 }
@@ -175,10 +134,19 @@ function QuickCard({ href, title, blurb }: { href: string; title: string; blurb:
   return (
     <Link
       href={href}
-      className="rounded-xl border border-border bg-card/50 p-5 hover:border-primary/50 transition-colors block"
+      className="rounded-xl border border-neutral-200 bg-white p-5 hover:border-primary/50 transition-colors block"
     >
-      <div className="font-semibold text-sm">{title}</div>
-      <div className="text-xs text-muted-foreground mt-1">{blurb}</div>
+      <div className="font-semibold text-sm text-neutral-900">{title}</div>
+      <div className="text-xs text-neutral-500 mt-1">{blurb}</div>
     </Link>
+  );
+}
+
+function ErrorCard() {
+  return (
+    <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-700 mb-8">
+      Couldn&apos;t load KPIs. Check that Supabase env vars are set and
+      all migrations (through 0009) have run.
+    </div>
   );
 }

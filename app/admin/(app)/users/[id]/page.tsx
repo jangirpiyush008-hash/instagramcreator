@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabaseService } from "@/core/database/supabase";
 import { CreditAdjustForm } from "@/web/components/admin/CreditAdjustForm";
+import { PlanChangeForm } from "@/web/components/admin/PlanChangeForm";
+import { RefundForm } from "@/web/components/admin/RefundForm";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -139,6 +141,14 @@ export default async function AdminUserDetailPage({
 
           <Section title="Credit adjustment">
             <CreditAdjustForm userId={id} currentBalance={walletTotal} />
+          </Section>
+
+          <Section title="Subscription">
+            <PlanChangeForm userId={id} currentPlan={activeSub?.plan ?? null} />
+          </Section>
+
+          <Section title="Razorpay refund">
+            <RefundForm />
           </Section>
         </div>
 

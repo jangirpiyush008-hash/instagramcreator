@@ -329,12 +329,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const hdrs = await headers();
   const isAdminContext = hdrs.get("x-dc-is-admin") === "1";
   if (isAdminContext) {
+    // Admin is FORCED LIGHT theme — no theme init script, no data-theme
+    // attribute, no dark class. Owner asked for light-only. Adds a
+    // `data-scope="admin"` on <html> so any future admin-specific CSS
+    // can target it without a "not marketing" selector.
     return (
-      <html lang="en">
-        <head>
-          <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-        </head>
-        <body>{children}</body>
+      <html lang="en" data-scope="admin">
+        <body className="bg-white text-neutral-900">{children}</body>
       </html>
     );
   }

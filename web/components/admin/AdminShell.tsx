@@ -5,24 +5,57 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 import { cn } from "@/web/lib/cn";
 
-// Admin panel chrome. Left sidebar navigation + top bar with the
-// Consumers ↔ Developers segment toggle. Both live on every admin
-// page so a segment choice persists as the user navigates.
-//
-// Segment state lives in the URL as ?seg=consumers|developers so it
-// survives navigation, shareable links, and browser back. Default is
-// consumers (bigger audience, most common admin task = look at web-app
-// users).
-
-const NAV = [
-  { href: "/admin", label: "Overview", exact: true },
-  { href: "/admin/users", label: "Users" },
-  // Growth orders removed from the sidebar per owner preference —
-  // still reachable at /admin/orders directly, and surfaced from the
-  // overview KPI card that highlights when pending > 0.
-];
+// Admin panel chrome — LIGHT theme only per owner request.
+// Left sidebar navigation is grouped by segment so any consumer or
+// developer action is one click from the sidebar (no top-bar hunting).
+// Top bar keeps the Consumers ↔ Developers toggle on the right for
+// quick segment switching from any page.
 
 type Segment = "consumers" | "developers";
+
+interface NavItem {
+  href: string;
+  label: string;
+  exact?: boolean;
+}
+interface NavGroup {
+  title?: string;
+  items: NavItem[];
+}
+
+function navFor(seg: Segment): NavGroup[] {
+  return [
+    {
+      items: [{ href: "/admin", label: "Overview", exact: true }],
+    },
+    {
+      title: seg === "consumers" ? "Consumers" : "Developers",
+      items:
+        seg === "consumers"
+          ? [
+              { href: `/admin/users?seg=consumers`, label: "All consumers" },
+              { href: `/admin/users?seg=consumers&status=active`, label: "Active subscribers" },
+              { href: `/admin/users?seg=consumers&status=free`, label: "Free tier" },
+              { href: `/admin/users/new?seg=consumers`, label: "+ Add consumer" },
+            ]
+          : [
+              { href: `/admin/users?seg=developers`, label: "All developers" },
+              { href: `/admin/users?seg=developers&sort=wallet`, label: "By wallet balance" },
+              { href: `/admin/users?seg=developers&sort=usage`, label: "By API usage" },
+              { href: `/admin/users/new?seg=developers`, label: "+ Add developer" },
+            ],
+    },
+    {
+      title: "Growth (separate)",
+      items: [
+        { href: "/admin/orders", label: "All orders" },
+        { href: "/admin/orders?status=awaiting_payment", label: "Awaiting payment" },
+        { href: "/admin/orders?status=paid", label: "Paid — needs delivery" },
+        { href: "/admin/orders?status=delivered", label: "Delivered" },
+      ],
+    },
+  ];
+}
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? "/admin";
@@ -47,45 +80,56 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const groups = navFor(seg);
+
   return (
-    <div className="min-h-screen flex bg-background">
+    <div className="min-h-screen flex bg-neutral-50 text-neutral-900">
       {/* SIDEBAR */}
-      <aside className="hidden md:flex md:w-60 lg:w-64 shrink-0 border-r border-border bg-card/40 flex-col">
-        <div className="px-5 py-5 border-b border-border/60">
-          <Link href="/admin" className="flex items-center gap-2 font-semibold tracking-tight">
+      <aside className="hidden md:flex md:w-64 shrink-0 border-r border-neutral-200 bg-white flex-col">
+        <div className="px-5 py-5 border-b border-neutral-200">
+          <Link href="/admin" className="flex items-center gap-2 font-semibold tracking-tight text-neutral-900">
             <span className="h-7 w-7 rounded-lg bg-gradient-ig" aria-hidden />
             <span>Admin</span>
           </Link>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-1">
+          <div className="text-[10px] uppercase tracking-wider text-neutral-500 mt-1">
             Owner console
           </div>
         </div>
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          {NAV.map((item) => {
-            const active = item.exact
-              ? pathname === item.href
-              : pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={`${item.href}?seg=${seg}`}
-                className={cn(
-                  "block px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                  active
-                    ? "bg-primary/10 text-primary"
-                    : "text-foreground/80 hover:text-foreground hover:bg-muted/60",
-                )}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-5">
+          {groups.map((g, gi) => (
+            <div key={gi}>
+              {g.title && (
+                <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 px-3 mb-2">
+                  {g.title}
+                </div>
+              )}
+              <div className="space-y-0.5">
+                {g.items.map((item) => {
+                  const active = isActive(pathname, search, item);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        "block px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                        active
+                          ? "bg-primary/10 text-primary"
+                          : "text-neutral-700 hover:text-neutral-900 hover:bg-neutral-100",
+                      )}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
-        <div className="p-3 border-t border-border/60">
+        <div className="p-3 border-t border-neutral-200">
           <button
             type="button"
             onClick={logout}
-            className="w-full text-left px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+            className="w-full text-left px-3 py-2 rounded-lg text-xs text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
           >
             Sign out
           </button>
@@ -94,34 +138,15 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
       {/* MAIN */}
       <div className="flex-1 min-w-0 flex flex-col">
-        {/*
-          TOP BAR — kept intentionally slim. Segment toggle lives on
-          the RIGHT (per owner preference), with the current-view label
-          on the left as a breadcrumb-ish helper. Growth orders link
-          on the right too so it's one click away without cluttering
-          the sidebar.
-        */}
-        <div className="border-b border-border bg-background/60 backdrop-blur">
+        {/* TOP BAR — segment toggle on the right */}
+        <div className="border-b border-neutral-200 bg-white">
           <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
-            <div className="text-xs text-muted-foreground">
+            <div className="text-xs text-neutral-500">
               {seg === "consumers"
-                ? "Viewing web-app users, subscriptions, per-user scans"
-                : "Viewing API users, wallet balances, API keys"}
+                ? "Viewing consumer web-app users"
+                : "Viewing API developers + wallet balances"}
             </div>
-            <div className="flex items-center gap-3">
-              <Link
-                href="/admin/orders"
-                className={cn(
-                  "text-xs font-medium px-3 py-1.5 rounded-full transition-colors",
-                  pathname.startsWith("/admin/orders")
-                    ? "bg-primary/10 text-primary"
-                    : "text-foreground/70 hover:text-foreground hover:bg-muted/60",
-                )}
-              >
-                Growth orders
-              </Link>
-              <SegmentToggle seg={seg} onChange={setSeg} />
-            </div>
+            <SegmentToggle seg={seg} onChange={setSeg} />
           </div>
         </div>
 
@@ -132,6 +157,20 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Match "active" based on pathname AND a subset of the query params
+// on the item's href. Lets us highlight e.g. /admin/users?seg=consumers
+// only when both pathname and seg match.
+function isActive(pathname: string, currentSearch: URLSearchParams, item: NavItem): boolean {
+  const [itemPath, itemQuery] = item.href.split("?");
+  if (item.exact ? pathname !== itemPath : !pathname.startsWith(itemPath!)) return false;
+  if (!itemQuery) return true;
+  const itemParams = new URLSearchParams(itemQuery);
+  for (const [k, v] of itemParams.entries()) {
+    if (currentSearch.get(k) !== v) return false;
+  }
+  return true;
+}
+
 // ── Segment toggle ─────────────────────────────────────────────────────
 function SegmentToggle({ seg, onChange }: { seg: Segment; onChange: (s: Segment) => void }) {
   const opts: { id: Segment; label: string; icon: string }[] = [
@@ -139,7 +178,7 @@ function SegmentToggle({ seg, onChange }: { seg: Segment; onChange: (s: Segment)
     { id: "developers", label: "Developers", icon: "🧑‍💻" },
   ];
   return (
-    <div className="inline-flex items-center rounded-full border border-border bg-card/70 p-1">
+    <div className="inline-flex items-center rounded-full border border-neutral-200 bg-white p-1 shadow-sm">
       {opts.map((o) => {
         const active = seg === o.id;
         return (
@@ -152,7 +191,7 @@ function SegmentToggle({ seg, onChange }: { seg: Segment; onChange: (s: Segment)
               "px-4 sm:px-5 py-1.5 rounded-full text-xs sm:text-sm font-medium transition-all",
               active
                 ? "bg-gradient-ig text-white shadow"
-                : "text-foreground/70 hover:text-foreground",
+                : "text-neutral-700 hover:text-neutral-900",
             )}
           >
             <span className="mr-1.5" aria-hidden>{o.icon}</span>
