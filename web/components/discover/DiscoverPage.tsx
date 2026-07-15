@@ -32,11 +32,13 @@ export function DiscoverPage({ initialPlatform, isSignedIn }: Props) {
   const [gated, setGated] = useState(false);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [saveState, setSaveState] = useState<Record<string, "idle" | "saving" | "saved">>({});
 
   const runSearch = useCallback(() => {
     setError(null);
+    setHasSearched(true);
     startTransition(async () => {
       const params = new URLSearchParams({ platform });
       if (query.trim()) params.set("q", query.trim());
@@ -217,7 +219,11 @@ export function DiscoverPage({ initialPlatform, isSignedIn }: Props) {
 
       {/* Results grid */}
       {results.length === 0 && !isPending && !error && (
-        <EmptyState platform={platform} />
+        hasSearched ? (
+          <NoResultsState platform={platform} query={query} />
+        ) : (
+          <EmptyState platform={platform} />
+        )
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -365,6 +371,28 @@ function EmptyState({ platform }: { platform: Platform }) {
       <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
         Type a keyword above — creator names, categories, or topics work. Add
         filters to narrow by follower size or engagement rate.
+      </p>
+    </div>
+  );
+}
+
+function NoResultsState({ platform, query }: { platform: Platform; query: string }) {
+  return (
+    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-10 text-center">
+      <div className="text-4xl mb-3">🤷</div>
+      <h3 className="font-semibold">No {PLATFORM_CFG[platform].label} creators matched</h3>
+      <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
+        {query.trim() ? (
+          <>Nothing returned for &ldquo;<b>{query.trim()}</b>&rdquo;. Try a
+          broader keyword, remove the follower / ER filters, or switch
+          platform.</>
+        ) : (
+          <>Enter a keyword above to search.</>
+        )}
+      </p>
+      <p className="text-xs text-muted-foreground/70 mt-3">
+        If this keeps happening on every keyword, the {PLATFORM_CFG[platform].label} search
+        provider may be temporarily down — check back in a few minutes.
       </p>
     </div>
   );

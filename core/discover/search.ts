@@ -134,32 +134,50 @@ export async function searchInstagram(query: string, limit = 20): Promise<Discov
     console.warn("[discover] HIKER_API_KEY not configured — IG search unavailable");
     return [];
   }
-  // HikerAPI user search — returns a page of matched profiles.
-  const url = `https://api.hikerapi.com/v1/user/search/user_v2?query=${encodeURIComponent(query)}`;
+  // HikerAPI search endpoint isn't in a single canonical path — the docs
+  // list variants (mobile "a1" prefix vs server v1/v2). Try each in
+  // order and keep the first that returns a non-empty user list.
+  const candidatePaths = [
+    `/v1/user/search/user_v2?query=${encodeURIComponent(query)}`,
+    `/v2/user/search?query=${encodeURIComponent(query)}`,
+    `/v1/user/search?query=${encodeURIComponent(query)}`,
+    `/a1/search/users?query=${encodeURIComponent(query)}`,
+    `/a1/user/search?query=${encodeURIComponent(query)}`,
+  ];
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
-    const res = await fetch(url, {
-      headers: { "x-access-key": key, accept: "application/json" },
-      signal: controller.signal,
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      console.warn("[discover] HikerAPI IG search returned", res.status);
-      return [];
+    for (const path of candidatePaths) {
+      const url = `https://api.hikerapi.com${path}`;
+      const res = await fetch(url, {
+        headers: { "x-access-key": key, accept: "application/json" },
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        console.warn(`[discover] HikerAPI ${path} → ${res.status}`);
+        continue;
+      }
+      const raw = (await res.json()) as unknown;
+      const users = extractHikerUsers(raw);
+      if (users.length === 0) {
+        console.warn(`[discover] HikerAPI ${path} → 200 but 0 users`);
+        continue;
+      }
+      console.log(`[discover] HikerAPI IG search hit on ${path} (${users.length} users)`);
+      return users.slice(0, limit).map((u) => ({
+        platform: "instagram" as Platform,
+        handle: u.username,
+        displayName: u.full_name,
+        bio: u.biography,
+        profilePicUrl: u.profile_pic_url,
+        isVerified: u.is_verified ?? false,
+        followers: Number(u.follower_count ?? 0),
+        postCount: Number(u.media_count ?? 0),
+      }));
     }
-    const raw = (await res.json()) as unknown;
-    const users = extractHikerUsers(raw);
-    return users.slice(0, limit).map((u) => ({
-      platform: "instagram" as Platform,
-      handle: u.username,
-      displayName: u.full_name,
-      bio: u.biography,
-      profilePicUrl: u.profile_pic_url,
-      isVerified: u.is_verified ?? false,
-      followers: Number(u.follower_count ?? 0),
-      postCount: Number(u.media_count ?? 0),
-    }));
+    console.warn("[discover] HikerAPI IG search: no endpoint returned results");
+    return [];
   } catch (e) {
     console.warn("[discover] HikerAPI IG search error:", e instanceof Error ? e.message : e);
     return [];
@@ -359,11 +377,22 @@ export async function searchCreators(
   if (fresh.length > 0) await upsertCreators(supa, fresh);
 
   // 4. Apply the numeric filters client-side to the fresh page.
+  //
+  // KEY nuance: fresh search results from providers DON'T include ER
+  // (that requires a per-profile enrichment call we skip for cost). So
+  // an ER filter on fresh hits would drop everything with `?? 0`. We
+  // pass through unknown-ER hits — the user's filter still applies to
+  // CACHED results that were enriched by a prior scan.
+  //
+  // Same rule for followers: if the provider returned 0 (missing field),
+  // don't drop the hit outright — it might be a real profile whose
+  // count didn't land in the search response.
   const filtered = fresh.filter((h) => {
-    if (filters.followersMin != null && h.followers < filters.followersMin) return false;
-    if (filters.followersMax != null && h.followers > filters.followersMax) return false;
-    if (filters.erMin != null && (h.engagementRate ?? 0) < filters.erMin) return false;
-    if (filters.erMax != null && (h.engagementRate ?? 0) > filters.erMax) return false;
+    if (filters.followersMin != null && h.followers > 0 && h.followers < filters.followersMin) return false;
+    if (filters.followersMax != null && h.followers > 0 && h.followers > filters.followersMax) return false;
+    // ER filter only excludes when we HAVE an ER value on the hit.
+    if (filters.erMin != null && h.engagementRate != null && h.engagementRate < filters.erMin) return false;
+    if (filters.erMax != null && h.engagementRate != null && h.engagementRate > filters.erMax) return false;
     return true;
   });
 
