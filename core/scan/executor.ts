@@ -11,7 +11,7 @@
 import type { Platform } from "@/core/types";
 import type { ToolResult, ToolParams } from "@/core/tools/types";
 import { getTool } from "@/core/tools/registry";
-import { adapterFor } from "@/core/data/router";
+import { adapterFor, freshAdapterFor } from "@/core/data/router";
 import { getCachedToolResult, writeCachedToolResult } from "@/core/data/cache";
 import { supabaseService } from "@/core/database/supabase";
 import { recordProfileSnapshot } from "@/core/data/snapshots";
@@ -22,6 +22,10 @@ export interface ExecuteScanArgs {
   handle: string;
   toolId: string;
   params?: ToolParams;
+  // Skip BOTH cache layers (tool-result cache + underlying primitive
+  // cache). Use only from the API layer when explicitly requested via
+  // ?fresh=1 — this is a diagnostic escape hatch, not a normal path.
+  bustCache?: boolean;
 }
 
 export interface ExecuteScanResult {
@@ -46,15 +50,21 @@ export async function executeScan(args: ExecuteScanArgs): Promise<ExecuteScanRes
 
   const supa = supabaseService();
   const hasParams = params && Object.keys(params).length > 0;
+  const bust = !!args.bustCache;
 
-  // 1) cache lookup — cache is per-tool by scan key, only used for default params
-  const cached = hasParams ? null : await getCachedToolResult(supa, platform, handle, args.toolId);
+  // 1) cache lookup — cache is per-tool by scan key, only used for default
+  //    params AND when the caller didn't ask to bust cache.
+  const cached =
+    bust || hasParams ? null : await getCachedToolResult(supa, platform, handle, args.toolId);
   if (cached) {
     return { result: cached, cacheHit: true };
   }
 
-  // 2) run the tool via the platform's adapter (already cache-wrapped)
-  const data = adapterFor(platform);
+  // 2) run the tool via the platform's adapter. Normal path is
+  //    CachedAdapter-wrapped (shared primitive cache); ?fresh=1 uses the
+  //    raw adapter so we can see live provider data without waiting for
+  //    the TTL. Diagnostic-only — see freshAdapterFor's doc comment.
+  const data = bust ? freshAdapterFor(platform) : adapterFor(platform);
   const result = await tool.run({ platform, handle, data, params });
 
   // 3) snapshot follower count for the growth tools

@@ -56,11 +56,17 @@ export async function GET(
     return NextResponse.json({ ok: false, error: auth.error, code: auth.code }, { status: auth.status });
   }
 
+  // ?fresh=1 skips BOTH cache layers. Diagnostic only — charged same
+  // credits, but skips the tool-result cache AND the primitive cache so
+  // callers can see fresh provider data after a code change. Reserved
+  // param name — do NOT surface as a tool param.
+  const bustCache = url.searchParams.get("fresh") === "1";
+
   // Pull any non-`tool` search params through as tool params (postCount,
   // contentType, etc.). Numeric strings coerce to numbers.
   const params: ToolParams = {};
   for (const [k, v] of url.searchParams.entries()) {
-    if (k === "tool") continue;
+    if (k === "tool" || k === "fresh") continue;
     const num = Number(v);
     if (!Number.isNaN(num) && v.trim() !== "") params[k] = num;
     else if (v === "true" || v === "false") params[k] = v === "true";
@@ -110,7 +116,7 @@ export async function GET(
         { status: 402 },
       );
     }
-    const { result, cacheHit } = await executeScan({ platform, handle, toolId, params });
+    const { result, cacheHit } = await executeScan({ platform, handle, toolId, params, bustCache });
     logApiUsage(supa, {
       keyId: auth.keyId,
       userId: auth.userId,

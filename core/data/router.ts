@@ -31,27 +31,33 @@ import { supabaseService } from "@/core/database/supabase";
 //
 // To swap providers later, change only this file — tools never see it.
 
-export function adapterFor(platform: Platform): DataAdapter {
+function baseAdapterFor(platform: Platform): DataAdapter {
   const hasHiker = (process.env.HIKER_API_KEY ?? "").trim().length > 0;
   const hasTikwmDirect = (process.env.TIKWM_API_KEY ?? "").trim().length > 0;
   const hasRapidApi = (process.env.RAPIDAPI_KEY ?? "").trim().length > 0;
 
-  let inner: DataAdapter;
   switch (platform) {
     case "youtube":
-      inner = new YouTubeOfficialAdapter();
-      break;
+      return new YouTubeOfficialAdapter();
     case "instagram":
-      if (hasHiker) inner = new HikerInstagramAdapter();
-      else if (hasRapidApi) inner = new RapidAPIInstagramAdapter();
-      else inner = new MockProvider("instagram");
-      break;
+      if (hasHiker) return new HikerInstagramAdapter();
+      if (hasRapidApi) return new RapidAPIInstagramAdapter();
+      return new MockProvider("instagram");
     case "tiktok":
-      if (hasTikwmDirect) inner = new TikwmDirectAdapter();
-      else if (hasRapidApi) inner = new RapidAPITikTokAdapter();
-      else inner = new MockProvider("tiktok");
-      break;
+      if (hasTikwmDirect) return new TikwmDirectAdapter();
+      if (hasRapidApi) return new RapidAPITikTokAdapter();
+      return new MockProvider("tiktok");
   }
+}
 
-  return new CachedAdapter(inner, supabaseService());
+// Standard path — CachedAdapter-wrapped, shared primitive cache.
+export function adapterFor(platform: Platform): DataAdapter {
+  return new CachedAdapter(baseAdapterFor(platform), supabaseService());
+}
+
+// Diagnostic path — raw adapter, no caching. Called from executeScan when
+// ?fresh=1 is passed on the API. Do NOT use in normal traffic — it bypasses
+// the shared primitive cache and blows up provider spend.
+export function freshAdapterFor(platform: Platform): DataAdapter {
+  return baseAdapterFor(platform);
 }
