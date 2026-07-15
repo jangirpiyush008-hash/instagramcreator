@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { ThemeToggle } from "@/web/components/ThemeToggle";
 import { AuthModal } from "@/web/components/AuthModal";
+import { CookieBanner, CookiePreferencesLink } from "@/web/components/CookieBanner";
 
 export const metadata: Metadata = {
   title: "DecodeCreator — audience analytics for any public Instagram, TikTok or YouTube account",
@@ -45,10 +46,36 @@ const themeInitScript = `
 })();
 `;
 
+// Google Consent Mode v2 defaults. Must fire BEFORE any gtag.js loads
+// so Google's tags see "denied" until the CookieBanner (or a stored
+// choice replay) updates the consent. We set dataLayer + gtag inline
+// so this survives without next/script coming to the rescue.
+const consentDefaultsScript = `
+window.dataLayer = window.dataLayer || [];
+function gtag(){ window.dataLayer.push(arguments); }
+window.gtag = window.gtag || gtag;
+gtag('consent', 'default', {
+  ad_storage: 'denied',
+  ad_user_data: 'denied',
+  ad_personalization: 'denied',
+  analytics_storage: 'denied',
+  functionality_storage: 'granted',
+  security_storage: 'granted',
+  wait_for_update: 500
+});
+`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
+        {/*
+          Order matters: consent defaults must run BEFORE any gtag.js
+          loads elsewhere on the page (headers, third-party scripts).
+          Keeping it above the theme script — theme has no dependency
+          on ad libs and gtag would race if we put ad libs first.
+        */}
+        <script dangerouslySetInnerHTML={{ __html: consentDefaultsScript }} />
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body>
@@ -103,12 +130,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </header>
           <main className="flex-1">{children}</main>
           <footer className="border-t border-border/60 text-xs text-muted-foreground">
-            <div className="container py-6 flex flex-wrap gap-4 justify-between items-center">
+            <div className="container py-6 flex flex-wrap gap-x-4 gap-y-3 justify-between items-center">
               <span>© DecodeCreator. Public-data analytics for creators and brands. Instagram + TikTok + YouTube.</span>
-              <nav className="flex gap-4">
+              <nav className="flex flex-wrap gap-x-4 gap-y-2">
+                <Link href="/about" className="hover:text-foreground transition-colors">About</Link>
                 <Link href="/docs" className="hover:text-foreground transition-colors">API</Link>
                 <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
                 <Link href="/terms" className="hover:text-foreground transition-colors">Terms</Link>
+                <Link href="/refund" className="hover:text-foreground transition-colors">Refund</Link>
+                <Link href="/cookies" className="hover:text-foreground transition-colors">Cookies</Link>
+                <CookiePreferencesLink className="hover:text-foreground transition-colors cursor-pointer" />
                 <a href="mailto:support.decodecreator@gmail.com" className="hover:text-foreground transition-colors">Support</a>
               </nav>
             </div>
@@ -122,6 +153,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Suspense fallback={null}>
           <AuthModal />
         </Suspense>
+        <CookieBanner />
       </body>
     </html>
   );

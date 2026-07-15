@@ -166,9 +166,22 @@ export default function PrivacyPage() {
 
       <Section title="Cookies and tracking">
         <p>
-          We use a first-party session cookie to keep you signed in. That is
-          the only cookie we set. We do <b>not</b> use Google Analytics,
-          Facebook Pixel, or any third-party ad tracker on the site.
+          We use a first-party session cookie to keep you signed in — this
+          is strictly necessary and cannot be disabled without signing you
+          out. With your explicit opt-in through our cookie banner, we may
+          also load Google Analytics and PostHog (analytics category) and
+          Google Ads conversion tracking (marketing category).{" "}
+          <b>Both categories are OFF by default</b>; nothing loads until you
+          actively accept it. See our{" "}
+          <Link href="/cookies" className="underline">
+            Cookie Policy
+          </Link>{" "}
+          for the full list, retention periods, and how to change your
+          choice.
+        </p>
+        <p>
+          We do <b>not</b> use Facebook Pixel, third-party data-broker
+          cookies, or fingerprinting scripts on the site.
         </p>
       </Section>
 
