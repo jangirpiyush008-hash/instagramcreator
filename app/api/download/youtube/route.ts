@@ -1,7 +1,35 @@
 import { NextResponse } from "next/server";
+import { getCurrentUser } from "@/web/lib/supabase-server";
+import { supabaseService } from "@/core/database/supabase";
+import { checkAndIncrementUsage } from "@/core/billing/rate-limit";
+import { hashIp, getClientIp } from "@/core/utils/hash";
+import { RateLimitError } from "@/core/utils/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Allowlist of upstream hosts we are willing to redirect / stream from.
+// Blocks a compromised or malicious upstream from turning this endpoint
+// into an open redirector (e.g. handing us back a URL that points at an
+// internal metadata service, a phishing page, etc.). YouTube's CDN uses
+// a small, well-known set of hostnames.
+const ALLOWED_MEDIA_HOSTS = [
+  /\.googlevideo\.com$/i,
+  /\.youtube\.com$/i,
+  /\.ytimg\.com$/i,
+  /^googlevideo\.com$/i,
+  /^youtube\.com$/i,
+];
+
+function isMediaHostAllowed(rawUrl: string): boolean {
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol !== "https:") return false;
+    return ALLOWED_MEDIA_HOSTS.some((re) => re.test(u.hostname));
+  } catch {
+    return false;
+  }
+}
 
 // YouTube MP4 downloader — fetches a fresh download URL on-demand from a
 // configurable RapidAPI provider, then either redirects the browser to it
@@ -100,6 +128,46 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid videoId" }, { status: 400 });
   }
 
+  // Auth + rate limit: this hits a paid RapidAPI provider on every call,
+  // and without a gate an unauthenticated caller could burn our quota
+  // (and racket up costs) in a loop. Route it through the same usage
+  // meter we use for scans, keyed under the pseudo-tool id "yt-download".
+  const user = await getCurrentUser();
+  const supa = supabaseService();
+  const anonKey = user ? null : await hashIp(getClientIp(req.headers));
+  try {
+    await checkAndIncrementUsage({
+      supabaseService: supa,
+      userId: user?.id ?? null,
+      anonKey,
+      toolId: "yt-download",
+    });
+  } catch (e) {
+    if (e instanceof RateLimitError) {
+      const rl = e as RateLimitError & { requiresAuth?: boolean; needsUpgrade?: boolean };
+      if (rl.requiresAuth) {
+        return NextResponse.json(
+          { ok: false, error: "Sign in to download videos.", code: "auth_required" },
+          { status: 401 },
+        );
+      }
+      if (rl.needsUpgrade) {
+        return NextResponse.json(
+          { ok: false, error: "Upgrade your plan to use this tool.", code: "upgrade_required" },
+          { status: 402 },
+        );
+      }
+      return NextResponse.json(
+        { ok: false, error: "Rate limit reached. Try again later.", code: "rate_limited" },
+        { status: 429 },
+      );
+    }
+    return NextResponse.json(
+      { ok: false, error: "Auth check failed. Try again.", code: "auth_error" },
+      { status: 500 },
+    );
+  }
+
   const apiKey = process.env.RAPIDAPI_KEY;
   const host = process.env.YT_DOWNLOAD_HOST;
   const path = process.env.YT_DOWNLOAD_PATH ?? `/v2/video/details?videoId=${videoId}`;
@@ -154,6 +222,17 @@ export async function GET(req: Request) {
           error:
             "Provider didn't return a downloadable MP4 for this video. It may be age-restricted, region-locked, or the provider's schema changed.",
         },
+        { status: 502 },
+      );
+    }
+
+    // Host allowlist: refuse to touch anything not on Google/YouTube CDN.
+    // Guards against a compromised or drifting upstream handing us back a
+    // URL that points at an internal service, another domain, etc.
+    if (!isMediaHostAllowed(pick.url)) {
+      console.warn("[yt-download] blocked non-allowlisted host from provider:", pick.url.slice(0, 200));
+      return NextResponse.json(
+        { ok: false, error: "Provider returned a download URL from an unexpected host." },
         { status: 502 },
       );
     }

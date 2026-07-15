@@ -105,21 +105,34 @@ async function bumpDayBucket(
     if (filter.anon_key) read = read.eq("anon_key", filter.anon_key);
     const { data: existing, error: readErr } = await read.maybeSingle();
     if (readErr) {
-      console.warn("[rate-limit] day-read failed, allowing:", readErr.message);
-      return 0;
+      // Fail CLOSED: a DB error shouldn't let a caller sneak past the
+      // rate limit. Returning Infinity forces the calling check
+      // `used >= limit` to trip. Dev bypass via RATE_LIMIT_DEV_BYPASS=1
+      // remains an option for anyone running against a broken/local DB.
+      console.error("[rate-limit] day-read failed, DENYING request:", readErr.message);
+      return Number.MAX_SAFE_INTEGER;
     }
     if (existing?.id) {
       const next = (existing.scans_count ?? 0) + 1;
       const { error } = await supa.from("usage_daily").update({ scans_count: next }).eq("id", existing.id);
-      if (error) console.warn("[rate-limit] day-update failed:", error.message);
+      if (error) {
+        console.error("[rate-limit] day-update failed, DENYING request:", error.message);
+        return Number.MAX_SAFE_INTEGER;
+      }
       return next;
     }
     const { error } = await supa.from("usage_daily").insert({ ...filter, day, scans_count: 1 });
-    if (error) console.warn("[rate-limit] day-insert failed:", error.message);
+    if (error) {
+      console.error("[rate-limit] day-insert failed, DENYING request:", error.message);
+      return Number.MAX_SAFE_INTEGER;
+    }
     return 1;
   } catch (e) {
-    console.warn("[rate-limit] day bucket exception, allowing:", e instanceof Error ? e.message : e);
-    return 0;
+    console.error(
+      "[rate-limit] day bucket exception, DENYING request:",
+      e instanceof Error ? e.message : e,
+    );
+    return Number.MAX_SAFE_INTEGER;
   }
 }
 
@@ -139,23 +152,32 @@ async function bumpMonthBucket(supa: SupabaseClient, userId: string): Promise<nu
       .eq("day", monthAnchor)
       .maybeSingle();
     if (readErr) {
-      console.warn("[rate-limit] month-read failed, allowing:", readErr.message);
-      return 0;
+      console.error("[rate-limit] month-read failed, DENYING request:", readErr.message);
+      return Number.MAX_SAFE_INTEGER;
     }
     if (existing?.id) {
       const next = (existing.scans_count ?? 0) + 1;
       const { error } = await supa.from("usage_daily").update({ scans_count: next }).eq("id", existing.id);
-      if (error) console.warn("[rate-limit] month-update failed:", error.message);
+      if (error) {
+        console.error("[rate-limit] month-update failed, DENYING request:", error.message);
+        return Number.MAX_SAFE_INTEGER;
+      }
       return next;
     }
     const { error } = await supa
       .from("usage_daily")
       .insert({ user_id: userId, day: monthAnchor, scans_count: 1 });
-    if (error) console.warn("[rate-limit] month-insert failed:", error.message);
+    if (error) {
+      console.error("[rate-limit] month-insert failed, DENYING request:", error.message);
+      return Number.MAX_SAFE_INTEGER;
+    }
     return 1;
   } catch (e) {
-    console.warn("[rate-limit] month bucket exception, allowing:", e instanceof Error ? e.message : e);
-    return 0;
+    console.error(
+      "[rate-limit] month bucket exception, DENYING request:",
+      e instanceof Error ? e.message : e,
+    );
+    return Number.MAX_SAFE_INTEGER;
   }
 }
 
