@@ -1,10 +1,18 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
+import Script from "next/script";
 import { Suspense } from "react";
 import { ThemeToggle } from "@/web/components/ThemeToggle";
 import { AuthModal } from "@/web/components/AuthModal";
 import { CookieBanner, CookiePreferencesLink } from "@/web/components/CookieBanner";
+import { GAPageview } from "@/web/components/GAPageview";
+
+// Google Analytics 4 measurement ID. Public by design — appears in
+// the rendered HTML on every visit. Wired to fire in Consent Mode v2
+// mode: defaults to denied (set inline in <head> below), granted
+// only after the user opts in via CookieBanner.
+const GA_MEASUREMENT_ID = "G-8ENDR3SQJE";
 
 export const metadata: Metadata = {
   title: "DecodeCreator — audience analytics for any public Instagram, TikTok or YouTube account",
@@ -154,6 +162,39 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <AuthModal />
         </Suspense>
         <CookieBanner />
+        {/*
+          Google Analytics 4. Strategy `afterInteractive` means the
+          gtag.js request starts once the page becomes interactive —
+          doesn't block first paint. The inline consent-defaults script
+          in <head> already fired by this point, so gtag reads
+          `analytics_storage: denied` on load and won't set cookies
+          until CookieBanner pushes an update.
+
+          GAPageview lives BELOW the Script tag so gtag() is defined
+          by the time route-change useEffect fires.
+        */}
+        <Script
+          src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
+          strategy="afterInteractive"
+        />
+        <Script id="ga-init" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){ dataLayer.push(arguments); }
+            window.gtag = window.gtag || gtag;
+            gtag('js', new Date());
+            gtag('config', '${GA_MEASUREMENT_ID}', {
+              // We handle page_view manually via <GAPageview> so App
+              // Router client-side navs are counted; disable auto to
+              // avoid double-counting the initial landing.
+              send_page_view: false,
+              anonymize_ip: true
+            });
+          `}
+        </Script>
+        <Suspense fallback={null}>
+          <GAPageview measurementId={GA_MEASUREMENT_ID} />
+        </Suspense>
       </body>
     </html>
   );
