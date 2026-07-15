@@ -2,25 +2,33 @@
 //
 // Flow per request:
 //   1. Read x-api-key header
-//   2. Hash + look up in api_keys, reject if missing / revoked / no credits
-//   3. Attach the customer context to the caller
-//   4. After the request succeeds, atomically deduct credits via
-//      deduct_credits(p_key_id, p_amount) — the pg function guarantees no
-//      race between two concurrent calls both proceeding on the last credit
-//   5. Log to api_usage
+//   2. Hash + look up in api_keys, reject if missing / revoked
+//   3. Look up the caller's wallet balance
+//   4. If subscription credits + wallet credits together aren't enough
+//      for this call → reject 402 with "credits_exhausted"
+//   5. Attach the customer context (both balances) to the caller
+//   6. After the request succeeds, deduct SUBSCRIPTION credits first
+//      (via the atomic deduct_credits pg function). If the subscription
+//      couldn't cover the whole amount, debit the remainder from the
+//      wallet (via deduct_wallet_credits).
+//   7. Log to api_usage
 //
-// If the tool call itself fails (upstream 429, 404, etc.) we DO NOT charge
-// — a failed scan wouldn't cost the customer anyway.
+// If the tool call itself fails (upstream 429, 404, etc.) we DO NOT charge.
+// Failed scans wouldn't cost the customer anyway.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { hashApiKey } from "./keys";
 import { supabaseService } from "@/core/database/supabase";
+import { getWalletBalance, deductFromWallet } from "@/core/billing/wallet";
 
 export interface ApiCustomer {
   keyId: string;
   userId: string;
   tier: string;
-  creditsRemaining: number;
+  // Both balances — used by chargeCredits to figure out where to debit
+  // from and by the caller to know how many credits are left overall.
+  creditsRemaining: number;      // subscription (api_keys.credits_remaining)
+  walletCredits: number;         // wallet (sum of non-expired lots)
 }
 
 export type AuthFailure = { error: string; status: number; code: string };
@@ -29,7 +37,7 @@ export async function authenticateApiKey(request: Request): Promise<ApiCustomer 
   const raw = request.headers.get("x-api-key")?.trim();
   if (!raw) {
     return {
-      error: "Missing x-api-key header. Get one at https://decodecreator.com/account.",
+      error: "Missing x-api-key header. Get one at https://decodecreator.com/developer.",
       status: 401,
       code: "no_api_key",
     };
@@ -52,9 +60,15 @@ export async function authenticateApiKey(request: Request): Promise<ApiCustomer 
   if (data.revoked_at) {
     return { error: "This API key has been revoked.", status: 401, code: "revoked_api_key" };
   }
-  if (data.credits_remaining <= 0) {
+
+  // Wallet balance is checked in addition to subscription — the caller
+  // is "out of credits" only when BOTH pools are empty.
+  const wallet = await getWalletBalance(supa, data.user_id);
+  const totalAvailable = Math.max(0, data.credits_remaining) + wallet.credits;
+  if (totalAvailable <= 0) {
     return {
-      error: "Monthly credit allowance exhausted. Upgrade your plan or wait for the next cycle.",
+      error:
+        "Credits exhausted. Top up your wallet or upgrade your plan at https://decodecreator.com/developer.",
       status: 402,
       code: "credits_exhausted",
     };
@@ -65,27 +79,64 @@ export async function authenticateApiKey(request: Request): Promise<ApiCustomer 
     userId: data.user_id,
     tier: data.tier,
     creditsRemaining: data.credits_remaining,
+    walletCredits: wallet.credits,
   };
 }
 
-// Atomic deduction using the deduct_credits pg function. Returns the new
-// balance, or null if the deduction would have gone negative (which means
-// a concurrent call snuck in and consumed the last of the credits).
+// Deduct credits: subscription first, wallet second. Returns TOTAL
+// credits remaining across both pools (or null if the deduction can't
+// be completed — a race where a concurrent call drained both since
+// authenticateApiKey ran).
 export async function chargeCredits(
   customer: ApiCustomer,
   amount: number,
 ): Promise<number | null> {
-  if (amount <= 0) return customer.creditsRemaining;
+  if (amount <= 0) return customer.creditsRemaining + customer.walletCredits;
   const supa = supabaseService();
-  const { data, error } = await supa.rpc("deduct_credits", {
-    p_key_id: customer.keyId,
-    p_amount: amount,
-  });
-  if (error) {
-    console.warn("[api-auth] deduct_credits failed:", error.message);
-    return customer.creditsRemaining; // best effort — don't block the request
+
+  // Step 1: try subscription pool. deduct_credits returns the NEW
+  // credits_remaining on the api_keys row, or null when the request
+  // would have gone negative (concurrent call snuck in).
+  let subRemaining = customer.creditsRemaining;
+  let toWallet = amount;
+
+  if (customer.creditsRemaining > 0) {
+    const takeFromSub = Math.min(amount, customer.creditsRemaining);
+    const { data, error } = await supa.rpc("deduct_credits", {
+      p_key_id: customer.keyId,
+      p_amount: takeFromSub,
+    });
+    if (error) {
+      console.warn("[api-auth] deduct_credits failed:", error.message);
+      return customer.creditsRemaining + customer.walletCredits;
+    }
+    if (typeof data !== "number") {
+      // Race: the pg function returned null → insufficient sub credits.
+      // Fall through to wallet with the full amount.
+      toWallet = amount;
+    } else {
+      subRemaining = data;
+      toWallet = amount - takeFromSub;
+    }
   }
-  return typeof data === "number" ? data : null;
+
+  // Step 2: debit any remainder from the wallet. deductFromWallet spans
+  // multiple lots FIFO and returns how many credits it actually took.
+  let walletDebited = 0;
+  if (toWallet > 0) {
+    walletDebited = await deductFromWallet(supa, customer.userId, toWallet);
+    if (walletDebited < toWallet) {
+      // Underrun — both pools together came up short. This shouldn't
+      // happen if authenticateApiKey ran <10ms ago, but log and let the
+      // caller decide (it'll show credits as low, prompting a top-up).
+      console.warn(
+        `[api-auth] wallet underrun: wanted ${toWallet}, got ${walletDebited} for user ${customer.userId}`,
+      );
+    }
+  }
+
+  const newWalletBalance = Math.max(0, customer.walletCredits - walletDebited);
+  return subRemaining + newWalletBalance;
 }
 
 // Fire-and-forget usage log. Failure to log doesn't break the request —

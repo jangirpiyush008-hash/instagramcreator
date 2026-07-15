@@ -4,6 +4,7 @@ import { creditCost } from "@/core/api/credits";
 import { executeScan, executeFullReport } from "@/core/scan/executor";
 import { toScanErrorResponse } from "@/core/scan/errors";
 import { supabaseService } from "@/core/database/supabase";
+import { creditWallet } from "@/core/billing/wallet";
 import type { Platform } from "@/core/types";
 import type { ToolParams } from "@/core/tools/types";
 
@@ -139,18 +140,25 @@ export async function GET(
       data: debug ? result : stripDiagnostics(result),
     });
   } catch (e) {
-    // Refund logic: since we charged optimistically before running the tool,
-    // a failed run should NOT cost the customer. Best-effort refund by
-    // deducting -cost (deduct_credits accepts negative-ish via inverse; we
-    // do a direct update here since RPC only handles positive amounts).
+    // Refund logic: we charged optimistically before running the tool.
+    // On failure, credit the full cost back as a wallet lot with source
+    // 'refund:tool-fail:<toolId>'. Simpler than un-doing the specific
+    // sub-vs-wallet debits chargeCredits() made, and appears in the
+    // user's wallet history for transparency. User gets their money's
+    // worth back either way.
     const cost = creditCost(toolId === "full-report" ? "full-report" : toolId);
-    await supa
-      .from("api_keys")
-      .update({ credits_remaining: auth.creditsRemaining })
-      .eq("id", auth.keyId)
-      .then(({ error }) => {
-        if (error) console.warn("[v1.scan] refund failed:", error.message);
+    if (cost > 0) {
+      await creditWallet(supa, {
+        userId: auth.userId,
+        credits: cost,
+        source: `refund:tool-fail:${toolId}`,
+      }).catch((err) => {
+        console.warn(
+          "[v1.scan] refund failed:",
+          err instanceof Error ? err.message : err,
+        );
       });
+    }
     logApiUsage(supa, {
       keyId: auth.keyId,
       userId: auth.userId,
