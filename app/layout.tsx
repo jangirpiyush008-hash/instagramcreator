@@ -8,6 +8,7 @@ import { AuthModal } from "@/web/components/AuthModal";
 import { CookieBanner, CookiePreferencesLink } from "@/web/components/CookieBanner";
 import { GAPageview } from "@/web/components/GAPageview";
 import { getCurrentUser } from "@/web/lib/supabase-server";
+import { CartProvider } from "@/web/components/services/CartContext";
 
 // Google Analytics 4 measurement ID. Public by design — appears in
 // the rendered HTML on every visit. Wired to fire in Consent Mode v2
@@ -349,6 +350,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
       </head>
       <body>
+        <CartProvider>
         <div className="min-h-screen flex flex-col">
           <header className="sticky top-0 z-30 backdrop-blur-md bg-background/70 border-b border-border/60">
             <div className="container py-4 flex items-center justify-between">
@@ -370,6 +372,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 >
                   Discover
                 </Link>
+                {/*
+                  NOTE: /services (SMM growth vertical) is intentionally
+                  NOT linked from the main navigation. It's a hidden
+                  URL — accessible directly at /services but not
+                  discoverable from decodecreator.com's UI. Keeps the
+                  main analytics brand cleanly separated from the SMM
+                  vertical for compliance reasons.
+                */}
                 <Link
                   href="/pricing"
                   className="text-foreground/80 hover:text-foreground font-medium px-3 py-1.5 rounded-full hover:bg-muted/60 transition-colors hidden sm:inline-block"
@@ -476,6 +486,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Suspense fallback={null}>
           <GAPageview measurementId={GA_MEASUREMENT_ID} />
         </Suspense>
+        </CartProvider>
       </body>
     </html>
   );
