@@ -1,6 +1,6 @@
 "use client";
 
-import { MetricCard, SectionTitle, Sparkline, StatusBadge } from "../primitives";
+import { CaveatBanner, MetricCard, SectionTitle, Sparkline, StatusBadge } from "../primitives";
 import type { Platform } from "@/core/types";
 
 interface Signal {
@@ -32,10 +32,12 @@ export function ShadowbanCheckerView({ handle, entitled: _entitled, data }: Prop
   const medianViewsPct = (data?.medianViewsPerFollowerPct as number | undefined) ?? 0;
   const medianLikesPct = (data?.medianLikesPerFollowerPct as number | undefined) ?? 0;
   const postsAnalyzed = (data?.postsAnalyzed as number | undefined) ?? 12;
+  const caveat = data?.caveat as string | undefined;
 
   return (
     <div className="space-y-6">
       <SectionTitle hint={`@${handle} · ${postsAnalyzed} posts analyzed`}>Account health</SectionTitle>
+      {caveat && <CaveatBanner>{caveat}</CaveatBanner>}
 
       <div className={`rounded-xl border p-6 ${status === "ok" ? "border-emerald-500/30 bg-emerald-500/5" : status === "warn" ? "border-amber-500/30 bg-amber-500/5" : "border-red-500/30 bg-red-500/5"}`}>
         <div className="flex items-center gap-3 flex-wrap">

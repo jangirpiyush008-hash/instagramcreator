@@ -82,6 +82,61 @@ export const bannedHashtag: SocialTool = {
   },
   async run({ platform, handle }) {
     const tag = handle.replace(/^#+/, "").toLowerCase();
+    const isYouTube = platform === "youtube";
+
+    // YouTube's hashtag rules work differently from IG/TikTok:
+    //   • YouTube doesn't publicly "ban" hashtags the same way
+    //   • Official rule: videos with >15 hashtags in the description → ALL
+    //     hashtags on that video are ignored (this is a per-video check, we
+    //     surface it in the guidance).
+    //   • Some sensitive-topic hashtags are hidden from hashtag pages, but
+    //     Google doesn't publish the list.
+    // Rather than pretend our IG/TT dictionary applies, we tell the user
+    // honestly what YouTube's rules actually are.
+    if (isYouTube) {
+      const ytStructural = /^\d+$/.test(tag)
+        ? { status: "warn" as const, reason: "Numeric-only hashtags rank poorly on YouTube search." }
+        : tag.length < 3
+        ? { status: "warn" as const, reason: "Very short hashtags rarely surface in search." }
+        : tag.length > 30
+        ? { status: "warn" as const, reason: "Long hashtags are treated as low-quality." }
+        : { status: "unknown" as const, reason: "YouTube doesn't publish a banned-hashtag list. Focus instead on the per-video rules below." };
+
+      return {
+        toolId: "banned-hashtag",
+        platform,
+        handle: tag,
+        free: {
+          hashtag: tag,
+          status: ytStructural.status,
+          reason: ytStructural.reason,
+          searchVisibility: "unknown",
+          alternatives: [],
+          checkedAgainst: 0,
+          caveat:
+            "⚠️ Tentative on YouTube — YouTube has no public 'banned hashtag' list like Instagram/TikTok. We can only flag structural issues (too short, too long, numeric-only). The real YT rules are enforced per-video.",
+          ytRules: [
+            {
+              rule: "≤ 15 hashtags per video description",
+              detail: "If you use more than 15, YouTube ignores ALL hashtags on that video. Enforced by Google.",
+            },
+            {
+              rule: "Hashtags must match the video content",
+              detail: "Off-topic or spammy hashtags can trigger a policy strike on the video.",
+            },
+            {
+              rule: "Sensitive-topic hashtags may be hidden from hashtag pages",
+              detail: "Google doesn't publish this list — safest to avoid political, medical, or adult-adjacent tags.",
+            },
+          ],
+          methodology:
+            "YouTube's hashtag enforcement is per-video (15-tag rule) and per-topic (sensitive-content hidden from browse). Google doesn't expose which hashtags are hidden, so we check what we can: structural sanity (length, format) plus surface YouTube's own published rules.",
+        },
+        locked: {},
+        generatedAt: new Date().toISOString(),
+      };
+    }
+
     const { status, reason } = classify(tag);
     const alternatives = SAFE_ALTS[tag] ?? [];
 

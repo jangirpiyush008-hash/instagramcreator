@@ -29,10 +29,27 @@ export const fakeFollower: SocialTool = {
   async run({ platform, handle, data }) {
     const profile = await data.getProfile(platform, handle);
     const posts = await data.getRecentPosts(platform, handle, 12);
+    const isYouTube = platform === "youtube";
+
+    // YouTube-specific caveats:
+    //   • YT Data API always returns following=0 (Google doesn't expose the
+    //     channel's subscriptions publicly). So the "Follows nobody" penalty
+    //     that fires on IG/TT is a guaranteed false positive on YT — skip it.
+    //   • YT subscriberCount is rounded (nearest 1K) so the ER math has an
+    //     inherent floor of ±0.1% — mention this in the caveat.
+    //   • We can lean harder on views/sub and comments/like ratios on YT
+    //     because every video has viewCount (unlike IG photos).
+    const ytNote = isYouTube
+      ? "⚠️ Tentative on YouTube — YouTube Data API doesn't expose subscriber lists or channel subscriptions, so this score is engagement-derived only (not a follower-sample audit). Also, YouTube rounds subscriber count to the nearest 1K which slightly inflates engagement rate math on the boundary."
+      : null;
 
     const totals = posts.reduce(
-      (a, p) => ({ likes: a.likes + p.likes, comments: a.comments + p.comments }),
-      { likes: 0, comments: 0 },
+      (a, p) => ({
+        likes: a.likes + p.likes,
+        comments: a.comments + p.comments,
+        views: a.views + (p.views ?? 0),
+      }),
+      { likes: 0, comments: 0, views: 0 },
     );
     const n = Math.max(posts.length, 1);
     const avgEngagement = (totals.likes + totals.comments) / n;
@@ -58,17 +75,66 @@ export const fakeFollower: SocialTool = {
       reasons.push({ flag: "Slightly low ER", note: `ER ${erPct.toFixed(2)}% is under 1.5% — mild dilution possible.`, delta: -6 });
     }
 
-    if (followers > 10_000 && following === 0) {
+    // "Follows nobody" — only a real signal on IG/TT. YouTube API always
+    // returns following=0 (Google doesn't expose it), so skip on YT.
+    if (!isYouTube && followers > 10_000 && following === 0) {
       quality -= 8;
       reasons.push({ flag: "Follows nobody", note: "Large accounts that follow no one are often bot-managed brand shells.", delta: -8 });
     }
-    if (followers > 10_000 && following > 0 && following / followers > 0.5) {
+    if (!isYouTube && followers > 10_000 && following > 0 && following / followers > 0.5) {
       quality -= 12;
       reasons.push({ flag: "Follow-back pattern", note: `Following ${following.toLocaleString()} vs followers ${followers.toLocaleString()} looks like a growth-hack pattern.`, delta: -12 });
     }
     if (!profile.verified && followers > 1_000_000) {
       quality -= 4;
       reasons.push({ flag: "Unverified at scale", note: "Real 1M+ creators almost always get verified.", delta: -4 });
+    }
+
+    // YouTube-only signals — replace the follow-ratio signals with metrics
+    // we CAN measure on YT: views/sub, comments/view, likes/view.
+    if (isYouTube && posts.length > 0 && followers > 0) {
+      const viewsPerSubPct = (totals.views / n / followers) * 100;
+      const likesPerViewPct = totals.views > 0 ? (totals.likes / totals.views) * 100 : 0;
+      const commentsPerLikePct = totals.likes > 0 ? (totals.comments / totals.likes) * 100 : 0;
+
+      // Healthy avg views/sub on YouTube: 10–20% for engaged audiences.
+      // <2% = bought subscribers not watching, or dead audience.
+      if (viewsPerSubPct < 2) {
+        quality -= 25;
+        reasons.push({
+          flag: "Very low watch rate",
+          note: `Avg ${viewsPerSubPct.toFixed(1)}% of subs watch new videos. Real audiences sit at 10–20%. Strong sign of purchased subs.`,
+          delta: -25,
+        });
+      } else if (viewsPerSubPct < 5) {
+        quality -= 12;
+        reasons.push({
+          flag: "Low watch rate",
+          note: `Avg ${viewsPerSubPct.toFixed(1)}% of subs watch new videos — below the 10% healthy floor.`,
+          delta: -12,
+        });
+      }
+
+      // Real subs like videos ~3–8% of the time. Bots basically never like.
+      if (likesPerViewPct > 0 && likesPerViewPct < 0.5) {
+        quality -= 10;
+        reasons.push({
+          flag: "Low like rate",
+          note: `${likesPerViewPct.toFixed(2)}% of viewers like. Real engaged audiences sit at 3–8%.`,
+          delta: -10,
+        });
+      }
+
+      // Comments < 5% of likes is normal (people like more than comment).
+      // Comments > 40% of likes on a big channel is suspicious — engagement pods.
+      if (followers > 100_000 && commentsPerLikePct > 40) {
+        quality -= 8;
+        reasons.push({
+          flag: "Unusual comment/like ratio",
+          note: `Comments are ${commentsPerLikePct.toFixed(0)}% of likes — could indicate engagement pods.`,
+          delta: -8,
+        });
+      }
     }
 
     quality = clamp(quality, 25, 99);
@@ -92,7 +158,10 @@ export const fakeFollower: SocialTool = {
         following,
         postsAnalyzed: posts.length,
         reasons,
-        methodology: "Heuristic from public engagement + follow ratios. Not a third-party bot scan — signal, not certainty.",
+        ...(ytNote ? { caveat: ytNote } : {}),
+        methodology:
+          (ytNote ? ytNote + " " : "") +
+          "Heuristic from public engagement + follow ratios. Not a third-party bot scan — signal, not certainty.",
       },
       locked: {},
       generatedAt: new Date().toISOString(),

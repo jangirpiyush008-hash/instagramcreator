@@ -60,6 +60,14 @@ export const unfollowerTracker: SocialTool = {
     const rows = await readRecentSnapshots(supa, platform, handle, 200);
     const current = profile.followers;
 
+    // YouTube rounds subscriberCount to the nearest 1K for channels >1K subs —
+    // it's a privacy floor from Google, not something any 3rd party can bypass.
+    // We surface this as a caveat so users don't chase phantom churn.
+    const isYouTube = platform === "youtube";
+    const ytNote = isYouTube
+      ? "⚠️ Tentative on YouTube — Google publishes subscriber counts rounded to the nearest 1K. Small day-to-day changes are invisible; we only detect delta ≥ 1K. Consider this a directional trend, not exact counts."
+      : null;
+
     const week = windowDelta(rows, current, 7);
     const month = windowDelta(rows, current, 30);
 
@@ -81,7 +89,7 @@ export const unfollowerTracker: SocialTool = {
           following: profile.following,
           verified: profile.verified,
           gathering: true,
-          note: "First snapshot — check back after any future scan to see churn.",
+          note: ytNote ?? "First snapshot — check back after any future scan to see churn.",
           history: [current],
           historyLabels: ["now"],
           net7d: 0,
@@ -92,6 +100,7 @@ export const unfollowerTracker: SocialTool = {
           gained30d: 0,
           churn7dPct: 0,
           snapshotCount: 1,
+          ...(ytNote ? { caveat: ytNote } : {}),
         },
         locked: {},
         generatedAt: new Date().toISOString(),
@@ -118,7 +127,9 @@ export const unfollowerTracker: SocialTool = {
         churn7dPct,
         snapshotCount: rows.length,
         firstSnapshotAt: rows[rows.length - 1]?.taken_at,
+        ...(ytNote ? { caveat: ytNote } : {}),
         methodology:
+          (ytNote ? ytNote + " " : "") +
           "Computed from follower-count snapshots taken on each scan. Shows NET change per window — we don't crawl the full follower list, so we can't identify individual unfollowers without spending 1000+ API calls per snapshot.",
       },
       locked: {},

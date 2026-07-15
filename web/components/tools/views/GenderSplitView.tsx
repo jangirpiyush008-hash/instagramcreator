@@ -1,6 +1,6 @@
 "use client";
 
-import { MetricCard, SectionTitle } from "../primitives";
+import { CaveatBanner, MetricCard, SectionTitle } from "../primitives";
 import type { Platform } from "@/core/types";
 
 interface Props {
@@ -35,11 +35,13 @@ export function GenderSplitView({ handle, data }: Props) {
   const confidence = (data?.confidence as string) ?? "Low";
   const methodology = data?.methodology as string | undefined;
   const topNames = (data?.topClassifiedNames as ClassifiedName[] | undefined) ?? [];
+  const caveat = data?.caveat as string | undefined;
 
   if (insufficientData) {
     return (
       <div className="space-y-6">
         <SectionTitle hint={`@${handle}`}>Audience gender split</SectionTitle>
+        {caveat && <CaveatBanner>{caveat}</CaveatBanner>}
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-6 space-y-3">
           <div className="text-xl font-semibold text-amber-200">Insufficient data</div>
           <p className="text-sm text-muted-foreground">{reason}</p>
@@ -65,6 +67,7 @@ export function GenderSplitView({ handle, data }: Props) {
   return (
     <div className="space-y-6">
       <SectionTitle hint={`@${handle} · ${sampleSize.toLocaleString()} sampled`}>Audience gender split</SectionTitle>
+      {caveat && <CaveatBanner>{caveat}</CaveatBanner>}
 
       <div className="rounded-xl border border-border bg-card/60 p-6 space-y-6">
         <div className="flex w-full h-6 rounded-full overflow-hidden border border-border/60">

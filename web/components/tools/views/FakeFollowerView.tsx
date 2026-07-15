@@ -1,6 +1,6 @@
 "use client";
 
-import { Donut, MetricCard, SectionTitle } from "../primitives";
+import { CaveatBanner, Donut, MetricCard, SectionTitle } from "../primitives";
 import type { Platform } from "@/core/types";
 
 interface Reason {
@@ -27,10 +27,12 @@ export function FakeFollowerView({ handle, entitled, data }: Props) {
   const verified = (data?.verified as boolean) ?? false;
   const reasons = (data?.reasons as Reason[] | undefined) ?? [];
   const methodology = (data?.methodology as string | undefined);
+  const caveat = data?.caveat as string | undefined;
 
   return (
     <div className="space-y-6">
       <SectionTitle hint={`@${handle} · ${postsAnalyzed} posts analyzed`}>Audience quality</SectionTitle>
+      {caveat && <CaveatBanner>{caveat}</CaveatBanner>}
 
       <div className="grid lg:grid-cols-[1fr_1.2fr] gap-4">
         <div className="rounded-xl border border-border bg-card/60 p-6 flex items-center justify-center">

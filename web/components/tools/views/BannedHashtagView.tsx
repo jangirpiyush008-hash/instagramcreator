@@ -1,6 +1,6 @@
 "use client";
 
-import { MetricCard, SectionTitle, StatusBadge } from "../primitives";
+import { CaveatBanner, MetricCard, SectionTitle, StatusBadge } from "../primitives";
 import type { Platform } from "@/core/types";
 
 interface Props {
@@ -32,6 +32,8 @@ export function BannedHashtagView({ handle, data }: Props) {
   const alternatives = (data?.alternatives as string[] | undefined) ?? [];
   const checkedAgainst = data?.checkedAgainst as number | undefined;
   const methodology = data?.methodology as string | undefined;
+  const caveat = data?.caveat as string | undefined;
+  const ytRules = data?.ytRules as { rule: string; detail: string }[] | undefined;
 
   const borderClass =
     status === "ok"
@@ -46,6 +48,7 @@ export function BannedHashtagView({ handle, data }: Props) {
 
   return (
     <div className="space-y-6">
+      {caveat && <CaveatBanner>{caveat}</CaveatBanner>}
       <div className={`rounded-xl border p-6 flex items-start gap-4 ${borderClass}`}>
         <div className="text-3xl leading-none text-muted-foreground">#</div>
         <div className="flex-1">
@@ -81,6 +84,20 @@ export function BannedHashtagView({ handle, data }: Props) {
           />
         </div>
       </section>
+
+      {ytRules && ytRules.length > 0 && (
+        <section>
+          <SectionTitle>What YouTube actually enforces</SectionTitle>
+          <div className="space-y-2">
+            {ytRules.map((r) => (
+              <div key={r.rule} className="rounded-xl border border-border bg-card/60 p-4">
+                <div className="font-medium text-sm">{r.rule}</div>
+                <div className="text-xs text-muted-foreground mt-1">{r.detail}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {alternatives.length > 0 && (
         <section>

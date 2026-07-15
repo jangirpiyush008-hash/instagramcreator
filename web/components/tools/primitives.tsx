@@ -3,6 +3,19 @@
 import { cn } from "@/web/lib/cn";
 import { BLURRED_PLACEHOLDER } from "@/core/constants";
 
+// Yellow-tinted disclaimer strip. Used to surface per-tool data caveats
+// (e.g. YouTube tools showing that their signals are proxied/estimated
+// rather than direct because YouTube Data API doesn't expose the same
+// primitives as IG/TT). Keeps disclosures visible without hiding them
+// in the fine-print methodology block.
+export function CaveatBanner({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100 leading-relaxed">
+      {children}
+    </div>
+  );
+}
+
 export function SectionTitle({
   children,
   hint,

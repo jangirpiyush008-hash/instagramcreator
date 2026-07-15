@@ -38,6 +38,16 @@ export const shadowbanChecker: SocialTool = {
     const posts = await data.getRecentPosts(platform, handle, 12);
     const followers = profile.followers ?? 0;
 
+    // YouTube doesn't shadowban in the IG/TikTok sense (posts vanishing from
+    // for-you / explore). Instead it limits recommendations, hides videos
+    // from search, or age-restricts them. We reuse the reach-drop signal
+    // stack — the tell is the same (views/sub collapse) — but flag the
+    // result as "distribution health" and note the different mechanism.
+    const isYouTube = platform === "youtube";
+    const ytNote = isYouTube
+      ? "⚠️ Tentative on YouTube — YouTube doesn't shadowban like Instagram/TikTok. This measures 'distribution health' by comparing recent reach to older-video reach. Real signal, different mechanism than IG's explore-page suppression."
+      : null;
+
     // Compute per-post ratios. TikTok posts always have view counts; IG
     // photos don't (only reels do), so guard against divisions by zero.
     const viewsPerFollower = posts.map((p) =>
@@ -93,6 +103,12 @@ export const shadowbanChecker: SocialTool = {
     const badSignals = [viewsSignal, likesSignal, trendSignal].filter((s) => s !== "ok").length;
     const status = badSignals >= 2 ? "warn" : badSignals === 1 ? "warn" : "ok";
 
+    const viewsSignalName = isYouTube
+      ? "Views per subscriber"
+      : platform === "tiktok"
+      ? "Views per follower"
+      : "Reel views per follower";
+
     return {
       toolId: "shadowban-checker",
       platform,
@@ -101,13 +117,16 @@ export const shadowbanChecker: SocialTool = {
         status,
         followers,
         postsAnalyzed: posts.length,
+        ...(ytNote ? { caveat: ytNote } : {}),
         signals: [
           {
-            name: platform === "tiktok" ? "Views per follower" : "Reel views per follower",
+            name: viewsSignalName,
             value: viewsSignal,
             note: validViewsRatios.length === 0
               ? "No video posts in sample — nothing to measure."
-              : `Median ${medViewsPerFollower.toFixed(1)}% (healthy: 5–30%).`,
+              : isYouTube
+                ? `Median ${medViewsPerFollower.toFixed(1)}% of subs watch recent uploads (healthy: 10–20%). Low = recommendation throttle.`
+                : `Median ${medViewsPerFollower.toFixed(1)}% (healthy: 5–30%).`,
           },
           {
             name: "Likes per follower",
@@ -115,7 +134,7 @@ export const shadowbanChecker: SocialTool = {
             note: `Median ${medLikesPerFollower.toFixed(2)}% across ${posts.length} recent posts.`,
           },
           {
-            name: "Recent vs older reach",
+            name: isYouTube ? "Recent vs older reach" : "Recent vs older reach",
             value: trendSignal,
             note: trendDropPct > 0
               ? `Recent posts down ${trendDropPct}% vs older ones in this sample.`

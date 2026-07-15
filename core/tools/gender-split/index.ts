@@ -19,7 +19,13 @@ import type { FollowerLite } from "@/core/data/adapter";
 // splits shown as real. Bug we already fought once, never again.
 
 const SAMPLE_TARGET = 100;
+// On YouTube we have to sample commenters (no follower list on YT), so bias
+// toward a larger sample to counter comment-authorship skew.
+const SAMPLE_TARGET_YOUTUBE = 500;
 const MIN_CONFIDENT = 20; // don't publish a split from fewer than this many classifiable names
+
+const YT_CAVEAT =
+  "⚠️ Tentative on YouTube — YouTube Data API does NOT expose subscriber lists (only channel owners see demographics in Studio). We estimate audience gender by sampling recent commenters. This skews slightly toward the more engaged / opinionated slice of your audience — treat as directional, not exact. Passive viewers are underrepresented.";
 
 export const genderSplit: SocialTool = {
   id: "gender-split",
@@ -37,21 +43,26 @@ export const genderSplit: SocialTool = {
   },
   async run({ platform, handle, data }) {
     const profile = await data.getProfile(platform, handle);
+    const isYouTube = platform === "youtube";
+    // YT never returns followers → jump straight to commenters. IG/TT try
+    // followers first (best sample), fall back to commenters.
+    const sampleTarget = isYouTube ? SAMPLE_TARGET_YOUTUBE : SAMPLE_TARGET;
 
-    // 1) Try the follower list first — best sample.
     let source: "followers" | "commenters" | "none" = "none";
     let sample: FollowerLite[] = [];
-    try {
-      sample = await data.getFollowerSample(platform, handle, SAMPLE_TARGET);
-      if (sample.length > 0) source = "followers";
-    } catch (e) {
-      console.warn("[gender-split] getFollowerSample failed:", e instanceof Error ? e.message : e);
+    if (!isYouTube) {
+      try {
+        sample = await data.getFollowerSample(platform, handle, sampleTarget);
+        if (sample.length > 0) source = "followers";
+      } catch (e) {
+        console.warn("[gender-split] getFollowerSample failed:", e instanceof Error ? e.message : e);
+      }
     }
 
-    // 2) Fallback to commenters if followers unavailable.
+    // Fallback (also the primary path for YT) — sample commenters.
     if (sample.length === 0) {
       try {
-        const commentsResult = await data.getRecentComments(platform, handle, SAMPLE_TARGET);
+        const commentsResult = await data.getRecentComments(platform, handle, sampleTarget);
         sample = commentsResult.comments.map((c) => ({
           username: c.username,
           fullName: undefined, // comments don't include full name — we'll parse username as best-effort
@@ -70,11 +81,14 @@ export const genderSplit: SocialTool = {
         free: {
           followers: profile.followers,
           insufficientData: true,
-          reason: "Couldn't fetch a follower or commenter sample for this account. The account may be private, hidden, or too new.",
+          reason: isYouTube
+            ? "Couldn't fetch commenter names for this channel. Comments may be disabled, or the channel has no recent uploads."
+            : "Couldn't fetch a follower or commenter sample for this account. The account may be private, hidden, or too new.",
           malePct: null,
           femalePct: null,
           unknownPct: null,
           source,
+          ...(isYouTube ? { caveat: YT_CAVEAT } : {}),
           methodology:
             "We classify audience gender by extracting first names from a public follower sample and looking each name up against our curated in-repo dictionary of Indian and Western first names. Never biometric, never a face scan, never an external API call.",
         },
@@ -109,6 +123,7 @@ export const genderSplit: SocialTool = {
           sampleSize: sample.length,
           classifiableCount,
           source,
+          ...(isYouTube ? { caveat: YT_CAVEAT } : {}),
           methodology:
             "We classify audience gender by extracting first names from a public follower sample and looking each name up against our curated in-repo dictionary of Indian and Western first names. Never biometric, never a face scan, never an external API call.",
         },
@@ -149,7 +164,9 @@ export const genderSplit: SocialTool = {
         confidentClassifications: totalKnown,
         source,
         confidence,
+        ...(isYouTube ? { caveat: YT_CAVEAT } : {}),
         methodology:
+          (isYouTube ? YT_CAVEAT + " " : "") +
           "We classify audience gender by extracting first names from a public follower sample and looking each name up against our curated in-repo dictionary of Indian and Western first names. Zero external API calls, zero biometric analysis. Names we don't recognise are counted as 'unclassified' (never guessed) and excluded from the M/F percentages. Binary M/F only — non-binary/trans audiences are not distinguished.",
         topClassifiedNames: classified
           .filter((c) => c.probability >= 0.85)

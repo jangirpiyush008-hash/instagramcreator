@@ -1,6 +1,6 @@
 "use client";
 
-import { MetricCard, SectionTitle, Sparkline } from "../primitives";
+import { CaveatBanner, MetricCard, SectionTitle, Sparkline } from "../primitives";
 import type { Platform } from "@/core/types";
 
 interface Props {
@@ -33,6 +33,7 @@ export function UnfollowerTrackerView({ handle, platform, data }: Props) {
   const firstSnapshotAt = data?.firstSnapshotAt as string | undefined;
   const methodology = data?.methodology as string | undefined;
   const note = data?.note as string | undefined;
+  const caveat = data?.caveat as string | undefined;
 
   const trendColor: "emerald" | "red" | "amber" =
     net7d > 0 ? "emerald" : net7d < 0 ? "red" : "amber";
@@ -40,6 +41,7 @@ export function UnfollowerTrackerView({ handle, platform, data }: Props) {
   return (
     <div className="space-y-6">
       <SectionTitle hint={`@${handle} · ${platform}`}>Follower churn</SectionTitle>
+      {caveat && <CaveatBanner>{caveat}</CaveatBanner>}
 
       {gathering ? (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-6 space-y-2">
