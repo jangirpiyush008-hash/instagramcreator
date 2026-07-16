@@ -148,13 +148,27 @@ export function readDiagnostic(): SearchDiagnostic[] {
 export function clearDiagnostic(): void {
   diag.length = 0;
 }
+// Redact anything that looks like a secret from the note field before
+// storing / returning it. Provider error bodies sometimes echo back the
+// API key they saw (Google Cloud does this to identify which key was
+// used), and even a suspended key shouldn't be exposed in the
+// public /api/discover response.
+function redactSecrets(s: string | undefined): string | undefined {
+  if (!s) return s;
+  return s
+    .replace(/api_key:[A-Za-z0-9_\-]{10,}/g, "api_key:<redacted>")
+    .replace(/AIza[0-9A-Za-z_\-]{20,}/g, "<redacted-google-key>")
+    .replace(/(?:x-access-key|Authorization|Bearer)\s*[:=]\s*['\"]?[A-Za-z0-9_\-.]{10,}['\"]?/gi, "$&<redacted>".replace(/[A-Za-z0-9_\-.]{10,}/, "<redacted>"));
+}
+
 function recordAttempt(platform: string, entry: SearchDiagnostic["attempts"][number]): void {
+  const safe = { ...entry, note: redactSecrets(entry.note) };
   let d = diag.find((x) => x.platform === platform);
   if (!d) {
     d = { platform, attempts: [] };
     diag.push(d);
   }
-  d.attempts.push(entry);
+  d.attempts.push(safe);
 }
 
 export async function searchInstagram(query: string, limit = 20): Promise<DiscoveryHit[]> {
