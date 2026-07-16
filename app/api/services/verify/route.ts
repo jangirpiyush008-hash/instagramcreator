@@ -176,6 +176,34 @@ export async function POST(req: Request) {
   });
   if (binanceVerdict.ok) {
     const detectedNetwork = binanceVerdict.network?.toLowerCase() ?? order.network;
+    // Dedup: refuse to unlock a second order using the same Binance
+    // deposit. The 7-day search window is wide enough that without this
+    // check, a $0.10 payment could satisfy any number of $0.10 orders.
+    if (binanceVerdict.txId) {
+      const { data: dup } = await supa
+        .from("service_orders")
+        .select("order_ref")
+        .eq("tx_hash", binanceVerdict.txId)
+        .neq("order_ref", orderRef)
+        .maybeSingle();
+      if (dup) {
+        await supa
+          .from("service_orders")
+          .update({
+            status: "awaiting_payment",
+            tx_verification_error: `Binance deposit ${binanceVerdict.txId} is already linked to ${dup.order_ref}.`,
+          })
+          .eq("id", order.id);
+        return NextResponse.json(
+          {
+            ok: false,
+            status: "failed",
+            error: `This Binance deposit is already linked to order ${dup.order_ref}. Send a new deposit for this order.`,
+          },
+          { status: 400 },
+        );
+      }
+    }
     await supa
       .from("service_orders")
       .update({

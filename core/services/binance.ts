@@ -63,9 +63,12 @@ export async function verifyBinanceDeposit(
     return { ok: false, reason: "Binance API not configured (BINANCE_API_KEY / BINANCE_API_SECRET missing)." };
   }
 
-  // Search window: order creation - 30min grace, up to now.
-  // Binance only lets us query 90 days at a time (fine, orders are days-old max).
-  const startTimeMs = (args.createdAtSec - 30 * 60) * 1000;
+  // Search window: order_created − 7 days back, up to now. Deliberately
+  // generous so a customer can pay from Binance BEFORE placing the
+  // order (a common flow — "I already sent it, here's my proof")
+  // without our search missing the deposit. Dedup on Binance txId
+  // stops the same deposit from unlocking two orders.
+  const startTimeMs = (args.createdAtSec - 7 * 24 * 60 * 60) * 1000;
   const endTimeMs = Date.now();
 
   const params = new URLSearchParams({
