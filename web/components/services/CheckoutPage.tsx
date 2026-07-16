@@ -338,7 +338,7 @@ export function CheckoutPage() {
         setStage("paid");
         clear();
       } else if (body.ok && body.status === "pending_manual") {
-        // Autoverify didn't catch it — order is now sitting in
+        // Autoverify couldn't determine — order is sitting in
         // pending_manual on the server, waiting for admin to confirm
         // via the Telegram screenshot the user sends. Show the
         // manual-review screen; the poller will flip to "paid" when
@@ -347,6 +347,14 @@ export function CheckoutPage() {
         if (body.detail) setVerifyDetail(body.detail);
         if (body.telegramUrl) setTelegramUrl(body.telegramUrl);
         setStage("pending_manual");
+      } else if (body.status === "rejected") {
+        // Provable rejection — the tx is definitely wrong (wrong
+        // recipient / amount / token / age). Force the user to retry
+        // with the correct hash. Order is back to awaiting_payment.
+        setVerifyError(body.error ?? "That transaction doesn't match this order. Please double-check the hash.");
+        if (body.detail) setVerifyDetail(body.detail);
+        setTelegramUrl(null); // rejections are user-fixable, no Telegram
+        setStage("pay");
       } else {
         setVerifyError(body.error ?? "Verification failed. Please check your tx hash.");
         if (body.detail) setVerifyDetail(body.detail);
@@ -570,12 +578,23 @@ export function CheckoutPage() {
             (both work — we detect automatically).
           </div>
           {verifyError && (
-            <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3 space-y-2">
-              <div className="text-xs text-destructive font-medium">{verifyError}</div>
-              {verifyDetail && (
-                <div className="text-[10px] text-muted-foreground font-mono break-words">
-                  {verifyDetail}
+            <div className="mt-3 rounded-lg border-2 border-destructive/60 bg-destructive/10 p-4 space-y-2">
+              <div className="flex items-start gap-2">
+                <span className="text-xl leading-none">⚠️</span>
+                <div className="flex-1">
+                  <div className="text-sm text-destructive font-bold">Wrong transaction — please retry</div>
+                  <div className="text-xs text-destructive/90 mt-1 leading-relaxed">{verifyError}</div>
                 </div>
+              </div>
+              {verifyDetail && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground">
+                    Technical detail
+                  </summary>
+                  <div className="mt-1 text-[10px] text-muted-foreground font-mono break-words rounded bg-background/50 p-2">
+                    {verifyDetail}
+                  </div>
+                </details>
               )}
               {telegramUrl && (
                 <a
@@ -640,9 +659,17 @@ export function CheckoutPage() {
 
       {/* Contact */}
       <section className="rounded-xl border border-border bg-card/60 p-5 sm:p-6 mb-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-          Contact
-        </h2>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Contact
+          </h2>
+          <Link
+            href="/?auth=signin&next=/account/orders"
+            className="text-[11px] text-primary hover:underline font-medium shrink-0"
+          >
+            Sign in to see order history →
+          </Link>
+        </div>
         <label className="block">
           <div className="text-xs font-medium mb-1">Email</div>
           <input
@@ -659,7 +686,12 @@ export function CheckoutPage() {
             <div className="text-xs text-destructive mt-1">{errors.email}</div>
           )}
           <div className="text-[11px] text-muted-foreground mt-1">
-            We&apos;ll email you order confirmation + delivery status.
+            We&apos;ll email you order confirmation + delivery status. Sign
+            in with the same email to see all your past orders on{" "}
+            <Link href="/account/orders" className="underline hover:text-foreground">
+              /account/orders
+            </Link>
+            .
           </div>
         </label>
       </section>

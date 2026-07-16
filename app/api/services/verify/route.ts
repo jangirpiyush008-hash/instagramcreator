@@ -235,15 +235,14 @@ export async function POST(req: Request) {
     });
   }
 
-  // ── Both stages failed → pending_manual (Telegram fallback) ──
+  // ── Both stages failed → classify: rejection vs pending_manual ──
   //
-  // We do NOT return "failed" here — that would suggest permanent
-  // rejection. Instead we move the order to `pending_manual`, which
-  // means "user paid, autoverify missed it, admin will confirm". The
-  // checkout UI polls order status; when an admin flips this to
-  // `paid` from the admin panel, the customer's screen updates to
-  // success automatically. The tx_hash the user pasted stays saved
-  // so they don't lose their proof if they refresh.
+  // The distinction matters for UX. If we can PROVE the tx is wrong
+  // (recipient / amount / token / age doesn't match), we reject with
+  // a red highlighted error so the user retries with the right one.
+  // If we simply can't determine — tx not yet indexed, Binance can't
+  // see the address — we fall through to pending_manual and let the
+  // user resolve via Telegram screenshot.
   const combinedReason = [
     onchainReason ? `On-chain: ${onchainReason}` : null,
     `Binance: ${binanceVerdict.reason}`,
@@ -251,6 +250,29 @@ export async function POST(req: Request) {
     .filter(Boolean)
     .join(" | ");
 
+  const rejection = classifyRejection(onchainReason, binanceVerdict.reason ?? "");
+  if (rejection) {
+    // Order goes BACK to awaiting_payment so the user can retry the
+    // input immediately — no admin involvement, no support ticket.
+    await supa
+      .from("service_orders")
+      .update({
+        status: "awaiting_payment",
+        tx_verification_error: combinedReason.slice(0, 500),
+      })
+      .eq("id", order.id);
+    return NextResponse.json({
+      ok: false,
+      status: "rejected",
+      error: rejection.userMessage,
+      detail: combinedReason,
+    });
+  }
+
+  // Ambiguous — we don't KNOW the tx is wrong, we just can't confirm
+  // it yet. Send them to Telegram fallback. Order sits in
+  // pending_manual until admin approves via the admin panel; the
+  // checkout page's poll flips to ✅ automatically when that happens.
   await supa
     .from("service_orders")
     .update({
@@ -273,4 +295,67 @@ export async function POST(req: Request) {
     detail: combinedReason,
     telegramUrl,
   });
+}
+
+// Classify a failure. Returns { userMessage } if the transaction is
+// PROVABLY wrong (user should retry with the correct one); returns
+// null when we honestly don't know (fall through to pending_manual).
+//
+// Matching is done on substring keywords from the exact reasons
+// verifyUsdtPayment / verifyBinanceDeposit produce — kept in sync
+// with the strings in core/services/payment.ts + core/services/binance.ts.
+function classifyRejection(
+  onchainReason: string | undefined,
+  binanceReason: string,
+): { userMessage: string } | null {
+  const combined = `${onchainReason ?? ""} | ${binanceReason}`.toLowerCase();
+
+  // On-chain unambiguously wrong tx.
+  if (onchainReason) {
+    const r = onchainReason.toLowerCase();
+    if (r.includes("format is invalid")) {
+      return {
+        userMessage:
+          "That doesn't look like a valid transaction hash. Copy the exact 66-character 0x… hash from your wallet, or paste your Binance transfer ID.",
+      };
+    }
+    if (r.includes("failed on-chain")) {
+      return {
+        userMessage:
+          "That transaction failed on-chain — the transfer never actually completed. Send the payment again and paste the new hash.",
+      };
+    }
+    if (r.includes("doesn't contain a usdt transfer")) {
+      return {
+        userMessage:
+          "That transaction doesn't send USDT to our wallet. Double-check you're pasting the RIGHT hash — the one for the USDT payment to our address, not any other transaction.",
+      };
+    }
+    if (r.includes("amount received") && r.includes("less than")) {
+      return {
+        userMessage: `Amount is short: ${onchainReason.replace(/^amount received/i, "Amount received")}`,
+      };
+    }
+    if (r.includes("more than 24 hours older")) {
+      return {
+        userMessage:
+          "That transaction is more than 24 hours older than this order — it's from a previous payment. Send a fresh payment and paste the new hash.",
+      };
+    }
+  }
+
+  // Binance-side "we saw your deposits but none matched". The user
+  // has Binance activity in the window, but nothing lines up with
+  // recipient + amount. Almost always: wrong tx ID pasted.
+  if (
+    binanceReason.toLowerCase().includes("but none matched") &&
+    !combined.includes("no usdt deposits found")
+  ) {
+    return {
+      userMessage:
+        "We can see your recent Binance deposits, but none match this order (either wrong recipient address or wrong amount). Double-check the transfer ID you pasted — grab it directly from the Binance deposit history screen for THIS $ amount.",
+    };
+  }
+
+  return null;
 }
