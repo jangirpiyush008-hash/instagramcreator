@@ -129,24 +129,50 @@ export async function upsertCreators(
 
 // ── Provider search: Instagram (HikerAPI) ──────────────────────────────
 
+// Per-platform diagnostic collected as we call providers. When the API
+// route sees 0 results, we shove this into the response so the operator
+// (and the browser) can see exactly what happened without hunting
+// Railway logs.
+export interface SearchDiagnostic {
+  platform: string;
+  attempts: { endpoint: string; status: number | string; note?: string; users?: number }[];
+}
+
+// Module-level scratch that the API route reads after each search call.
+// Populated by searchInstagram / searchTikTok / searchYouTube and
+// cleared by clearDiagnostic().
+const diag: SearchDiagnostic[] = [];
+export function readDiagnostic(): SearchDiagnostic[] {
+  return diag.slice();
+}
+export function clearDiagnostic(): void {
+  diag.length = 0;
+}
+function recordAttempt(platform: string, entry: SearchDiagnostic["attempts"][number]): void {
+  let d = diag.find((x) => x.platform === platform);
+  if (!d) {
+    d = { platform, attempts: [] };
+    diag.push(d);
+  }
+  d.attempts.push(entry);
+}
+
 export async function searchInstagram(query: string, limit = 20): Promise<DiscoveryHit[]> {
   const key = process.env.HIKER_API_KEY;
   if (!key) {
     console.warn("[discover] HIKER_API_KEY not configured — IG search unavailable");
+    recordAttempt("instagram", { endpoint: "-", status: "no-key", note: "HIKER_API_KEY env var missing" });
     return [];
   }
-  // HikerAPI's account-search endpoints (confirmed against the live
-  // openapi.json at api.hikerapi.com/openapi.json). v2 is the current
-  // recommended path; v3 is newer, /v1/search/users is deprecated but
-  // still functional. Try in preferred order, keep the first that
-  // returns a non-empty user list.
-  //
-  // NB: search results DON'T include follower_count — that's a separate
-  // /v2/user/by/username fetch. We surface the shallow hit here (name,
-  // username, pic, verified) and skip enrichment to keep search cheap.
+  // HikerAPI's account-search endpoints. v2/fbsearch/accounts is the
+  // most reliable per the openapi.json — but requires the "Top 5"
+  // pricing tier ($99/mo starter). Adding /v2/fbsearch/topsearch as
+  // fallback since it's a broader endpoint that may be on lower tiers
+  // and also returns user entries embedded in its `list`.
   const q = encodeURIComponent(query);
   const candidatePaths = [
     `/v2/fbsearch/accounts?query=${q}`,
+    `/v2/fbsearch/topsearch?query=${q}`,
     `/v3/fbsearch/accounts?query=${q}`,
     `/v1/search/users?query=${q}`,
   ];
@@ -160,12 +186,21 @@ export async function searchInstagram(query: string, limit = 20): Promise<Discov
         signal: controller.signal,
         cache: "no-store",
       });
+      const shortPath = path.split("?")[0]!;
       if (!res.ok) {
-        console.warn(`[discover] HikerAPI ${path} → ${res.status}`);
+        // Try to read the error body so 402 "your plan doesn't include X"
+        // shows up in the diagnostic rather than just a status code.
+        let bodyPreview = "";
+        try {
+          bodyPreview = (await res.text()).slice(0, 200);
+        } catch { /* ignore */ }
+        recordAttempt("instagram", { endpoint: shortPath, status: res.status, note: bodyPreview });
+        console.warn(`[discover] HikerAPI ${path} → ${res.status} ${bodyPreview.slice(0, 120)}`);
         continue;
       }
       const raw = (await res.json()) as unknown;
       const users = extractHikerUsers(raw);
+      recordAttempt("instagram", { endpoint: shortPath, status: 200, users: users.length });
       if (users.length === 0) {
         console.warn(`[discover] HikerAPI ${path} → 200 but 0 users`);
         continue;
@@ -185,7 +220,9 @@ export async function searchInstagram(query: string, limit = 20): Promise<Discov
     console.warn("[discover] HikerAPI IG search: no endpoint returned results");
     return [];
   } catch (e) {
-    console.warn("[discover] HikerAPI IG search error:", e instanceof Error ? e.message : e);
+    const msg = e instanceof Error ? e.message : String(e);
+    recordAttempt("instagram", { endpoint: "-", status: "exception", note: msg });
+    console.warn("[discover] HikerAPI IG search error:", msg);
     return [];
   } finally {
     clearTimeout(timeout);
@@ -205,8 +242,20 @@ interface HikerUser {
 function extractHikerUsers(raw: unknown): HikerUser[] {
   if (!raw || typeof raw !== "object") return [];
   const r = raw as Record<string, unknown>;
-  // Provider returns either { users: [...] } or bare array — defensive.
+  // /v2/fbsearch/accounts shape: { users: [...] }
   if (Array.isArray(r.users)) return r.users as HikerUser[];
+  // /v2/fbsearch/topsearch shape: { list: [{ user: {...} }, ...] }
+  //   Entries in `list` can be posts too — filter to just those with
+  //   a user object.
+  if (Array.isArray(r.list)) {
+    return (r.list as unknown[])
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") return null;
+        const e = entry as Record<string, unknown>;
+        return (e.user as HikerUser) ?? null;
+      })
+      .filter((u): u is HikerUser => u !== null && !!u.username);
+  }
   if (Array.isArray(r)) return r as unknown as HikerUser[];
   if (Array.isArray(r.data)) return r.data as HikerUser[];
   return [];
@@ -233,11 +282,15 @@ export async function searchTikTok(query: string, limit = 20): Promise<Discovery
       cache: "no-store",
     });
     if (!res.ok) {
+      let bodyPreview = "";
+      try { bodyPreview = (await res.text()).slice(0, 200); } catch { /* ignore */ }
+      recordAttempt("tiktok", { endpoint: "user/search", status: res.status, note: bodyPreview });
       console.warn("[discover] tikwm TT search returned", res.status);
       return [];
     }
     const raw = (await res.json()) as unknown;
     const entries = extractTikwmUserEntries(raw);
+    recordAttempt("tiktok", { endpoint: "user/search", status: 200, users: entries.length });
     if (entries.length === 0) {
       console.warn("[discover] tikwm TT search returned 0 entries");
     }
@@ -323,6 +376,7 @@ export async function searchYouTube(query: string, limit = 20): Promise<Discover
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) {
     console.warn("[discover] YOUTUBE_API_KEY not configured — YT search unavailable");
+    recordAttempt("youtube", { endpoint: "-", status: "no-key", note: "YOUTUBE_API_KEY env var missing" });
     return [];
   }
   const searchUrl =
@@ -333,11 +387,17 @@ export async function searchYouTube(query: string, limit = 20): Promise<Discover
   try {
     const res = await fetch(searchUrl, { signal: controller.signal, cache: "no-store" });
     if (!res.ok) {
-      console.warn("[discover] YouTube search returned", res.status);
+      let bodyPreview = "";
+      try {
+        bodyPreview = (await res.text()).slice(0, 300);
+      } catch { /* ignore */ }
+      recordAttempt("youtube", { endpoint: "search.list", status: res.status, note: bodyPreview });
+      console.warn("[discover] YouTube search returned", res.status, bodyPreview.slice(0, 200));
       return [];
     }
     const raw = (await res.json()) as YouTubeSearchResp;
     const items = raw.items ?? [];
+    recordAttempt("youtube", { endpoint: "search.list", status: 200, users: items.length });
     // We have snippet only — need a second call to statistics.
     const channelIds = items
       .map((it) => it.snippet?.channelId ?? it.id?.channelId)
@@ -405,6 +465,10 @@ export async function searchCreators(
   platform: Platform,
   filters: SearchFilters,
 ): Promise<DiscoveryHit[]> {
+  // Reset per-request diagnostic bucket so the API route sees only
+  // attempts from THIS search call.
+  clearDiagnostic();
+
   const limit = Math.min(50, Math.max(1, filters.limit ?? 20));
 
   // 1. Try cache first.

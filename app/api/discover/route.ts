@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/web/lib/supabase-server";
 import { supabaseService } from "@/core/database/supabase";
 import { getUserTier } from "@/core/billing/entitlements";
-import { searchCreators, type SearchFilters } from "@/core/discover/search";
+import { searchCreators, readDiagnostic, type SearchFilters } from "@/core/discover/search";
 import type { Platform } from "@/core/types";
 
 export const runtime = "nodejs";
@@ -56,6 +56,12 @@ export async function GET(req: Request) {
 
   const results = await searchCreators(supa, platform, filters);
 
+  // Include provider diagnostic on ANY 0-result response OR when
+  // ?diag=1 is passed. Turns "why did I get nothing" from a Railway
+  // logs hunt into a one-line curl.
+  const wantDiag = url.searchParams.get("diag") === "1" || results.length === 0;
+  const diag = wantDiag ? readDiagnostic() : undefined;
+
   // Preview mode: return only 5, flag gated=true so the UI shows an upsell.
   if (previewOnly) {
     return NextResponse.json({
@@ -63,9 +69,16 @@ export async function GET(req: Request) {
       results: results.slice(0, 5),
       gated: true,
       total: results.length,
+      ...(diag ? { diag } : {}),
     });
   }
-  return NextResponse.json({ ok: true, results, gated: false, total: results.length });
+  return NextResponse.json({
+    ok: true,
+    results,
+    gated: false,
+    total: results.length,
+    ...(diag ? { diag } : {}),
+  });
 }
 
 function parseIntSafe<T>(v: string | null, dflt: T, min?: number, max?: number): number | T {
