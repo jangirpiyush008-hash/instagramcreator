@@ -14,8 +14,11 @@ const DEFAULT_WALLET = "0x0ae6a9e19a702546e36b5267749b0f278fd289c1";
 
 // Sanity limits so a malicious client can't submit a 500MB cart.
 const MAX_ITEMS = 20;
-const MIN_ORDER_USD = 1;   // absurdly small orders aren't worth the tx fee
-const MAX_ORDER_USD = 5000; // hard cap on a single order pending manual review
+// Minimum order — deliberately low to allow real-crypto testing.
+// Set via SERVICES_MIN_ORDER_USD env if you want to raise it later
+// (e.g. to make sub-cent orders uneconomic once fulfilment automates).
+const MIN_ORDER_USD = Number(process.env.SERVICES_MIN_ORDER_USD ?? "0.10");
+const MAX_ORDER_USD = Number(process.env.SERVICES_MAX_ORDER_USD ?? "5000");
 
 interface IncomingItem {
   serviceId: string;

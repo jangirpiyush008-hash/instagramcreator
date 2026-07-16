@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseService } from "@/core/database/supabase";
-import { verifyBep20UsdtPayment } from "@/core/services/payment";
+import { verifyUsdtPayment } from "@/core/services/payment";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
   const { data: order, error: readErr } = await supa
     .from("service_orders")
     .select(
-      "id, order_ref, status, wallet_address, total_usdt, created_at, tx_hash",
+      "id, order_ref, status, wallet_address, total_usdt, created_at, tx_hash, network",
     )
     .eq("order_ref", orderRef)
     .maybeSingle();
@@ -102,13 +102,13 @@ export async function POST(req: Request) {
 
   const orderCreatedSec = Math.floor(new Date(order.created_at).getTime() / 1000);
 
-  const verdict = await verifyBep20UsdtPayment({
+  const verdict = await verifyUsdtPayment({
     txHash,
     expectedRecipient: order.wallet_address,
     expectedAmountUsdt: Number(order.total_usdt),
-    // Give a 30-min grace period backward for clock skew and any manual
-    // pre-payment before checkout. Tighter than 24h to prevent recycling
-    // very old txs.
+    // 30-min grace period backward for clock skew + manual pre-payment
+    // before checkout. The verify function itself allows another 24h
+    // grace on top for slow-confirming txs.
     minTimestampSec: orderCreatedSec - 30 * 60,
   });
 
@@ -127,6 +127,10 @@ export async function POST(req: Request) {
     });
   }
 
+  // Persist which chain the tx was actually verified on. Useful for
+  // support (admin can jump to the right explorer) and reporting
+  // (which chain do customers actually pay on).
+  const detectedNetwork = verdict.chain ?? order.network;
   await supa
     .from("service_orders")
     .update({
@@ -135,6 +139,7 @@ export async function POST(req: Request) {
       amount_received_usdt: verdict.amountReceivedUsdt ?? null,
       from_address: verdict.fromAddress ?? null,
       tx_verification_error: null,
+      network: detectedNetwork,
     })
     .eq("id", order.id);
 
@@ -146,7 +151,9 @@ export async function POST(req: Request) {
   return NextResponse.json({
     ok: true,
     status: "paid",
+    chain: verdict.chain,
     amountReceivedUsdt: verdict.amountReceivedUsdt,
     fromAddress: verdict.fromAddress,
+    explorerUrl: verdict.explorerUrl,
   });
 }

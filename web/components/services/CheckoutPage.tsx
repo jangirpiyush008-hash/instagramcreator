@@ -36,7 +36,15 @@ interface VerifyResponse {
   error?: string;
   amountReceivedUsdt?: number;
   fromAddress?: string;
+  chain?: "bsc" | "ethereum" | "polygon";
+  explorerUrl?: string;
 }
+
+const CHAIN_LABEL: Record<string, string> = {
+  bsc: "BNB Smart Chain (BEP20)",
+  ethereum: "Ethereum (ERC20)",
+  polygon: "Polygon",
+};
 
 interface FieldErrors {
   email?: string;
@@ -191,7 +199,15 @@ export function CheckoutPage() {
           </p>
           {verified?.amountReceivedUsdt != null && (
             <div className="text-xs text-muted-foreground mt-4">
-              Received: <b>{verified.amountReceivedUsdt.toFixed(2)} USDT</b> on BEP20
+              Received: <b>{verified.amountReceivedUsdt.toFixed(2)} USDT</b>
+              {verified.chain ? ` on ${CHAIN_LABEL[verified.chain] ?? verified.chain}` : ""}
+            </div>
+          )}
+          {verified?.explorerUrl && (
+            <div className="text-xs mt-1">
+              <a href={verified.explorerUrl} target="_blank" rel="noopener noreferrer" className="underline text-muted-foreground hover:text-foreground">
+                View on-chain →
+              </a>
             </div>
           )}
           <div className="mt-8 flex gap-2 justify-center">
@@ -224,10 +240,11 @@ export function CheckoutPage() {
             Pay <span className="tabular-nums">{order.amountUsdt.toFixed(2)} USDT</span> to complete
           </h1>
           <p className="text-muted-foreground text-sm mt-2 max-w-2xl">
-            Send exactly <b className="text-foreground tabular-nums">{order.amountUsdt.toFixed(2)} USDT</b> on the{" "}
-            <b className="text-foreground">BNB Smart Chain (BEP20)</b> network to
-            the wallet below. Paste your transaction hash and we&apos;ll
-            verify on-chain in ~30 seconds.
+            Send exactly <b className="text-foreground tabular-nums">{order.amountUsdt.toFixed(2)} USDT</b> to
+            the wallet below on <b className="text-foreground">BEP20 (recommended)</b>,{" "}
+            <b className="text-foreground">ERC20</b>, or <b className="text-foreground">Polygon</b>.
+            Same address works on all three. Paste your transaction hash
+            and we&apos;ll auto-detect the chain and verify.
           </p>
         </header>
 
@@ -247,7 +264,7 @@ export function CheckoutPage() {
 
           {/* Details */}
           <div className="space-y-4">
-            <DetailRow label="Network" value="BNB Smart Chain (BEP20)" />
+            <DetailRow label="Network" value="BEP20 · ERC20 · Polygon" />
             <DetailRow label="Token" value="USDT" />
             <DetailRow
               label="Amount"
@@ -264,8 +281,9 @@ export function CheckoutPage() {
               wrap
             />
             <div className="rounded-md bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-foreground/80 leading-relaxed">
-              ⚠️ Send exactly the amount shown, on the <b>BEP20</b> network
-              only. Wrong network = lost funds. If your wallet asks for a
+              ⚠️ Send USDT on <b>BEP20 / ERC20 / Polygon</b> only.
+              TRC20 (Tron) or Solana USDT go to a different address and
+              are not currently supported. If your wallet asks for a
               memo/tag, leave it blank.
             </div>
           </div>
@@ -343,7 +361,7 @@ export function CheckoutPage() {
         </h1>
         <p className="text-muted-foreground text-sm mt-2">
           Tell us where to deliver each service and where to send your
-          confirmation. Pay with USDT (BEP20) — no account needed.
+          confirmation. Pay with USDT (BEP20 / ERC20 / Polygon) — no account needed.
         </p>
       </header>
 
@@ -458,7 +476,7 @@ export function CheckoutPage() {
           <div className="text-right text-[11px] text-muted-foreground">
             Payable in USDT
             <br />
-            on BEP20 network
+            on BEP20 / ERC20 / Polygon
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
