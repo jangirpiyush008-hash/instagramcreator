@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { supabaseService } from "@/core/database/supabase";
 import { getServiceById, computePrice } from "@/core/services/catalog";
+import { loadOverridesMap, applyOverride } from "@/core/services/overrides";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -76,6 +77,28 @@ export async function POST(req: Request) {
   // only — we NEVER trust them. If the client's cart has been tampered
   // with (e.g. edited retail rates in JS), our server-computed total
   // is what we ask them to pay.
+  //
+  // Load admin overrides ONCE before the item loop so bulk-edited
+  // prices/quantities take effect the moment the row lands in
+  // service_overrides — no deploy required.
+  // Guard supabaseService() — if SUPABASE_SERVICE_ROLE is missing on
+  // the deploy, this throws (see Phase A hardening). Actionable error
+  // beats a generic 500.
+  let supaEarly;
+  try {
+    supaEarly = supabaseService();
+  } catch (e) {
+    console.error("[services/order] supabase env misconfigured:", e);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Server misconfigured — Supabase env vars missing on the deploy. Contact support.",
+      },
+      { status: 500 },
+    );
+  }
+  const overrides = await loadOverridesMap(supaEarly);
+
   let totalUsd = 0;
   const priced: {
     serviceId: string;
@@ -86,10 +109,17 @@ export async function POST(req: Request) {
   }[] = [];
 
   for (const item of body.items) {
-    const svc = getServiceById(item.serviceId);
-    if (!svc || !svc.isActive) {
+    const baseSvc = getServiceById(item.serviceId);
+    if (!baseSvc) {
       return NextResponse.json(
-        { ok: false, error: `Unknown or inactive service: ${item.serviceId}` },
+        { ok: false, error: `Unknown service: ${item.serviceId}` },
+        { status: 400 },
+      );
+    }
+    const svc = applyOverride(baseSvc, overrides.get(item.serviceId));
+    if (!svc.isActive) {
+      return NextResponse.json(
+        { ok: false, error: `Service is not currently active: ${item.serviceId}` },
         { status: 400 },
       );
     }
@@ -134,24 +164,10 @@ export async function POST(req: Request) {
   const walletAddress = process.env.SERVICES_USDT_WALLET_BEP20 ?? DEFAULT_WALLET;
   const orderRef = shortRef();
 
-  // Wrap the DB call so we return an ACTIONABLE error to the client and
-  // log it too. The generic "Could not create order" was hiding the
-  // real cause (usually: migration 0008 hasn't been applied yet →
-  // Postgres 42P01 "relation service_orders does not exist").
-  let supa;
-  try {
-    supa = supabaseService();
-  } catch (e) {
-    console.error("[services/order] supabase env misconfigured:", e);
-    return NextResponse.json(
-      {
-        ok: false,
-        error:
-          "Server misconfigured — Supabase env vars missing on the deploy. Contact support.",
-      },
-      { status: 500 },
-    );
-  }
+  // Reuse the supa client we already created above for the overrides
+  // load — no point rebuilding it. If the env-var check above hadn't
+  // already thrown, we wouldn't be here.
+  const supa = supaEarly;
 
   const { error } = await supa.from("service_orders").insert({
     order_ref: orderRef,

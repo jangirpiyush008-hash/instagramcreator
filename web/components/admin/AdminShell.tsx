@@ -45,6 +45,10 @@ function navFor(seg: Segment): NavGroup[] {
           { href: "/admin/orders?seg=growth&status=failed", label: "Failed" },
         ],
       },
+      {
+        title: "Catalog",
+        items: [{ href: "/admin/services?seg=growth", label: "Bulk edit prices" }],
+      },
     ];
   }
   if (seg === "consumers") {

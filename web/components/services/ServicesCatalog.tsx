@@ -10,6 +10,7 @@ import {
   fmtQty,
 } from "@/core/services/catalog";
 import { useCart } from "./CartContext";
+import { TrialModal } from "./TrialModal";
 
 // Grid of every active service, filterable by platform. Each card has
 // an inline quantity picker + Add-to-cart button so the user doesn't
@@ -27,6 +28,7 @@ const PLATFORM_TABS: { id: PlatformFilter; label: string; gradient: string }[] =
 
 export function ServicesCatalog() {
   const [platform, setPlatform] = useState<PlatformFilter>("all");
+  const [trialFor, setTrialFor] = useState<Service | null>(null);
   const { count, totalUsd } = useCart();
 
   const visible = useMemo(() => {
@@ -95,9 +97,12 @@ export function ServicesCatalog() {
       {/* Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {visible.map((svc) => (
-          <ServiceCard key={svc.id} service={svc} />
+          <ServiceCard key={svc.id} service={svc} onTrialClick={() => setTrialFor(svc)} />
         ))}
       </div>
+
+      {/* Trial modal — one instance controlled by the outer state */}
+      <TrialModal service={trialFor} trialQty={50} onClose={() => setTrialFor(null)} />
 
       {/*
         Back-to-main link — kept at the bottom of the page rather than
@@ -118,7 +123,7 @@ export function ServicesCatalog() {
 }
 
 // ── Single service card with inline qty picker + add button ─────────────
-function ServiceCard({ service }: { service: Service }) {
+function ServiceCard({ service, onTrialClick }: { service: Service; onTrialClick: () => void }) {
   const { items, addItem } = useCart();
   const [qty, setQty] = useState<number>(service.qty.min);
 
@@ -254,6 +259,19 @@ function ServiceCard({ service }: { service: Service }) {
             </button>
           )}
         </div>
+
+        {/*
+          Free-trial button — separate row so it doesn't compete with
+          the primary "Add to cart" CTA. Anti-abuse (1 per person ever)
+          is enforced server-side via IP + email + handle unique keys.
+        */}
+        <button
+          type="button"
+          onClick={onTrialClick}
+          className="w-full mt-2 py-2 rounded-lg text-xs font-medium border border-dashed border-primary/40 text-primary hover:bg-primary/5 transition-colors"
+        >
+          🎁 Try 50 free — no card
+        </button>
       </div>
     </div>
   );
