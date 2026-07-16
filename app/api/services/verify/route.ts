@@ -21,12 +21,20 @@ interface Body {
 
 // Build the Telegram deep link the checkout falls back to when neither
 // on-chain nor Binance verification succeeds. TELEGRAM_SUPPORT_USERNAME
-// env var holds our support handle without the leading @.
-function telegramFallbackUrl(orderRef: string, amountUsdt: number): string | null {
+// env var holds our support handle without the leading @. The message
+// pre-fills with everything we need to verify manually so the customer
+// can send it in one tap.
+function telegramFallbackUrl(
+  orderRef: string,
+  amountUsdt: number,
+  txHash: string,
+): string | null {
   const username = process.env.TELEGRAM_SUPPORT_USERNAME;
   if (!username) return null;
   const text = encodeURIComponent(
-    `Hi, I paid for order ${orderRef} (${amountUsdt.toFixed(2)} USDT). Attaching my transaction screenshot.`,
+    `Hi, I paid for order ${orderRef} (${amountUsdt.toFixed(2)} USDT).\n` +
+      `Transaction/Transfer ID: ${txHash}\n` +
+      `Attaching my payment screenshot for manual verification.`,
   );
   return `https://t.me/${username.replace(/^@/, "")}?text=${text}`;
 }
@@ -227,11 +235,15 @@ export async function POST(req: Request) {
     });
   }
 
-  // ── Both stages failed → Telegram fallback ──
+  // ── Both stages failed → pending_manual (Telegram fallback) ──
   //
-  // Reset the order back to awaiting_payment so the user can retry,
-  // and surface both failure reasons + a pre-drafted Telegram deep
-  // link that includes the order ref for support.
+  // We do NOT return "failed" here — that would suggest permanent
+  // rejection. Instead we move the order to `pending_manual`, which
+  // means "user paid, autoverify missed it, admin will confirm". The
+  // checkout UI polls order status; when an admin flips this to
+  // `paid` from the admin panel, the customer's screen updates to
+  // success automatically. The tx_hash the user pasted stays saved
+  // so they don't lose their proof if they refresh.
   const combinedReason = [
     onchainReason ? `On-chain: ${onchainReason}` : null,
     `Binance: ${binanceVerdict.reason}`,
@@ -242,18 +254,22 @@ export async function POST(req: Request) {
   await supa
     .from("service_orders")
     .update({
-      status: "awaiting_payment",
+      status: "pending_manual",
       tx_verification_error: combinedReason.slice(0, 500),
     })
     .eq("id", order.id);
 
-  const telegramUrl = telegramFallbackUrl(orderRef, Number(order.total_usdt));
+  const telegramUrl = telegramFallbackUrl(
+    orderRef,
+    Number(order.total_usdt),
+    txHash,
+  );
 
   return NextResponse.json({
-    ok: false,
-    status: "failed",
-    error:
-      "We couldn't verify this transaction automatically. If you paid via Binance internal transfer, or from an unsupported chain, contact us on Telegram with a screenshot — we'll verify manually within 15 minutes.",
+    ok: true,
+    status: "pending_manual",
+    message:
+      "Your submission is saved. We couldn't auto-verify this transaction, but our team will confirm it manually within 15 minutes. Send us a screenshot on Telegram to speed it up — you can safely close this page, we'll email you when it's done.",
     detail: combinedReason,
     telegramUrl,
   });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/web/lib/cn";
 import { useCart, useCartWithServices } from "./CartContext";
@@ -35,6 +35,7 @@ interface VerifyResponse {
   status?: string;
   error?: string;
   detail?: string;
+  message?: string;
   amountReceivedUsdt?: number;
   fromAddress?: string;
   chain?: "bsc" | "ethereum" | "polygon";
@@ -43,6 +44,21 @@ interface VerifyResponse {
   transferType?: "onchain" | "internal";
   network?: string;
   telegramUrl?: string;
+}
+
+interface StatusResponse {
+  ok: boolean;
+  orderRef?: string;
+  status?: string;
+  maskedEmail?: string;
+  amountUsdt?: number;
+  amountReceivedUsdt?: number | null;
+  walletAddress?: string;
+  network?: string;
+  hasTxHash?: boolean;
+  verifiedAt?: string | null;
+  lastError?: string | null;
+  error?: string;
 }
 
 const CHAIN_LABEL: Record<string, string> = {
@@ -57,7 +73,7 @@ interface FieldErrors {
   general?: string;
 }
 
-type Stage = "form" | "pay" | "verifying" | "paid";
+type Stage = "form" | "pay" | "verifying" | "pending_manual" | "paid";
 
 export function CheckoutPage() {
   const { rows } = useCartWithServices();
@@ -81,6 +97,125 @@ export function CheckoutPage() {
   const [verifyDetail, setVerifyDetail] = useState<string | null>(null);
   const [telegramUrl, setTelegramUrl] = useState<string | null>(null);
   const [verified, setVerified] = useState<VerifyResponse | null>(null);
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  const [maskedEmail, setMaskedEmail] = useState<string | null>(null);
+
+  // Polling controls — active whenever we're waiting on server state
+  // (submitted verify but no answer yet, or manual review pending).
+  // Persist orderRef in URL so a refresh resumes the flow. We also
+  // mirror it in localStorage as a belt-and-suspenders in case a
+  // browser strips query params on reload (some in-app browsers do).
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopPolling = useCallback(() => {
+    if (pollTimer.current) {
+      clearInterval(pollTimer.current);
+      pollTimer.current = null;
+    }
+  }, []);
+
+  // Apply a server-side status snapshot to local state. Called by both
+  // the initial resume-on-mount fetch and the polling loop.
+  const applyStatus = useCallback(
+    (s: StatusResponse) => {
+      if (!s.ok || !s.orderRef || !s.status) return;
+      if (s.walletAddress && s.amountUsdt != null) {
+        setOrder({
+          orderRef: s.orderRef,
+          walletAddress: s.walletAddress,
+          amountUsdt: s.amountUsdt,
+          totalUsd: s.amountUsdt, // display only
+        });
+      }
+      if (s.maskedEmail) setMaskedEmail(s.maskedEmail);
+      if (
+        s.status === "paid" ||
+        s.status === "fulfilling" ||
+        s.status === "delivered"
+      ) {
+        setStage("paid");
+        setVerified({
+          ok: true,
+          status: s.status,
+          amountReceivedUsdt: s.amountReceivedUsdt ?? undefined,
+        });
+        stopPolling();
+        clear();
+        // Also drop the ?ref= now that the flow is complete so a
+        // deep-link share doesn't perpetually resume someone else.
+        if (typeof window !== "undefined") {
+          const u = new URL(window.location.href);
+          u.searchParams.delete("ref");
+          window.history.replaceState(null, "", u.toString());
+          try {
+            localStorage.removeItem("dc.services.lastOrderRef");
+          } catch {
+            // storage may be disabled — non-fatal
+          }
+        }
+      } else if (s.status === "pending_manual") {
+        setStage("pending_manual");
+      } else if (s.status === "verifying") {
+        setStage("verifying");
+      } else {
+        // awaiting_payment / failed / refunded — stay on pay screen
+        setStage("pay");
+      }
+    },
+    [clear, stopPolling],
+  );
+
+  const fetchStatus = useCallback(
+    async (ref: string): Promise<StatusResponse | null> => {
+      try {
+        const res = await fetch(
+          `/api/services/order/status?ref=${encodeURIComponent(ref)}`,
+          { cache: "no-store" },
+        );
+        const body = (await res.json()) as StatusResponse;
+        return body;
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
+  // ── Resume on mount: URL ?ref=DC-XXXXXXXX or localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    let ref = url.searchParams.get("ref");
+    if (!ref) {
+      try {
+        ref = localStorage.getItem("dc.services.lastOrderRef");
+      } catch {
+        ref = null;
+      }
+    }
+    if (!ref || !/^DC-[A-F0-9]{8}$/i.test(ref)) return;
+    (async () => {
+      const s = await fetchStatus(ref);
+      if (s?.ok) applyStatus(s);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Poll while waiting: verifying + pending_manual
+  useEffect(() => {
+    if (!order?.orderRef) return;
+    if (stage !== "verifying" && stage !== "pending_manual") {
+      stopPolling();
+      return;
+    }
+    // 6s cadence — fast enough that admin-approve → user-sees-success
+    // feels "live" without hammering the server.
+    stopPolling();
+    pollTimer.current = setInterval(async () => {
+      const s = await fetchStatus(order.orderRef);
+      if (s?.ok) applyStatus(s);
+    }, 6000);
+    return stopPolling;
+  }, [stage, order?.orderRef, fetchStatus, applyStatus, stopPolling]);
 
   if (!hydrated) {
     return (
@@ -90,7 +225,10 @@ export function CheckoutPage() {
     );
   }
 
-  if (rows.length === 0 && stage !== "paid") {
+  // Only show empty-cart when there really is no active flow. If we
+  // have an order (e.g. resumed from ?ref= or pending_manual polling),
+  // the cart being empty is expected — the user has already checked out.
+  if (rows.length === 0 && !order && stage === "form") {
     return (
       <div className="container py-16 max-w-2xl text-center">
         <h1 className="text-2xl font-semibold tracking-tight">
@@ -153,6 +291,21 @@ export function CheckoutPage() {
         totalUsd: body.totalUsd ?? body.amountUsdt,
       });
       setStage("pay");
+      // Persist orderRef in URL + localStorage so a refresh (or
+      // returning to this page later) resumes exactly where we left
+      // off. This is the "we already captured your details" backing
+      // — the DB has the order, the URL points at it, and the poller
+      // will pick up any admin-side status change.
+      if (typeof window !== "undefined") {
+        const u = new URL(window.location.href);
+        u.searchParams.set("ref", body.orderRef);
+        window.history.replaceState(null, "", u.toString());
+        try {
+          localStorage.setItem("dc.services.lastOrderRef", body.orderRef);
+        } catch {
+          // storage may be disabled — non-fatal, URL is the primary channel
+        }
+      }
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
       setErrors({ general: err instanceof Error ? err.message : "Network error" });
@@ -184,6 +337,16 @@ export function CheckoutPage() {
         setVerified(body);
         setStage("paid");
         clear();
+      } else if (body.ok && body.status === "pending_manual") {
+        // Autoverify didn't catch it — order is now sitting in
+        // pending_manual on the server, waiting for admin to confirm
+        // via the Telegram screenshot the user sends. Show the
+        // manual-review screen; the poller will flip to "paid" when
+        // admin approves.
+        setPendingMessage(body.message ?? null);
+        if (body.detail) setVerifyDetail(body.detail);
+        if (body.telegramUrl) setTelegramUrl(body.telegramUrl);
+        setStage("pending_manual");
       } else {
         setVerifyError(body.error ?? "Verification failed. Please check your tx hash.");
         if (body.detail) setVerifyDetail(body.detail);
@@ -195,6 +358,78 @@ export function CheckoutPage() {
       setStage("pay");
     }
   };
+
+  // ── Pending manual review ────────────────────────────────────────────
+  // Reached when autoverify (on-chain + Binance) couldn't match the
+  // deposit. Order is server-side `pending_manual`; the poller keeps
+  // checking status and will auto-advance to "paid" the moment admin
+  // approves in the admin panel. User can safely close the page.
+  if (stage === "pending_manual" && order) {
+    return (
+      <div className="container py-12 max-w-2xl">
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-6 sm:p-10 text-center">
+          <div className="text-5xl mb-3">
+            <span className="inline-block animate-pulse">🔄</span>
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Processing your payment
+          </h1>
+          <p className="text-sm text-muted-foreground mt-3 max-w-md mx-auto leading-relaxed">
+            {pendingMessage ??
+              "We couldn't auto-verify this transaction, but your submission is saved. Our team will manually confirm it within 15 minutes."}
+          </p>
+          <div className="rounded-lg border border-border bg-background/60 p-4 mt-6 max-w-md mx-auto text-left space-y-2">
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Order</span>
+              <b className="tabular-nums">{order.orderRef}</b>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Amount</span>
+              <b className="tabular-nums">{order.amountUsdt.toFixed(2)} USDT</b>
+            </div>
+            {maskedEmail && (
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Email</span>
+                <b>{maskedEmail}</b>
+              </div>
+            )}
+            {txHash && (
+              <div className="flex justify-between text-xs gap-3">
+                <span className="text-muted-foreground shrink-0">Tx</span>
+                <span className="font-mono break-all text-right">{txHash}</span>
+              </div>
+            )}
+          </div>
+          {telegramUrl && (
+            <a
+              href={telegramUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 mt-6 rounded-lg bg-[#229ED9] text-white px-6 py-3 text-sm font-semibold hover:brightness-110 transition shadow-lg shadow-[#229ED9]/20"
+            >
+              <TelegramIcon /> Send screenshot on Telegram (speeds it up)
+            </a>
+          )}
+          <div className="mt-6 rounded-md bg-emerald-500/10 border border-emerald-500/30 p-3 text-xs text-foreground/80 leading-relaxed max-w-md mx-auto">
+            ✅ Your submission is saved — closing this page won&apos;t cancel
+            verification. We&apos;ll email you at the address on your order
+            the moment it&apos;s confirmed. You can re-open this exact page
+            any time by keeping the URL bookmarked.
+          </div>
+          {verifyDetail && (
+            <details className="mt-4 max-w-md mx-auto text-left">
+              <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
+                Technical details
+              </summary>
+              <div className="mt-2 text-[10px] text-muted-foreground font-mono break-words rounded bg-background/60 p-2">
+                {verifyDetail}
+              </div>
+            </details>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // ── Success screen ───────────────────────────────────────────────────
   if (stage === "paid" && order) {
