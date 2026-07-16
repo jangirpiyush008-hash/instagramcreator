@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseService } from "@/core/database/supabase";
 import { verifyUsdtPayment } from "@/core/services/payment";
+import { verifyBinanceDeposit } from "@/core/services/binance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +19,18 @@ interface Body {
   txHash?: string;
 }
 
+// Build the Telegram deep link the checkout falls back to when neither
+// on-chain nor Binance verification succeeds. TELEGRAM_SUPPORT_USERNAME
+// env var holds our support handle without the leading @.
+function telegramFallbackUrl(orderRef: string, amountUsdt: number): string | null {
+  const username = process.env.TELEGRAM_SUPPORT_USERNAME;
+  if (!username) return null;
+  const text = encodeURIComponent(
+    `Hi, I paid for order ${orderRef} (${amountUsdt.toFixed(2)} USDT). Attaching my transaction screenshot.`,
+  );
+  return `https://t.me/${username.replace(/^@/, "")}?text=${text}`;
+}
+
 export async function POST(req: Request) {
   let raw: unknown;
   try {
@@ -27,17 +40,22 @@ export async function POST(req: Request) {
   }
   const body = raw as Body;
   const orderRef = (body.orderRef ?? "").trim().toUpperCase();
-  const txHash = (body.txHash ?? "").trim().toLowerCase();
+  const txHash = (body.txHash ?? "").trim();
 
   if (!/^DC-[A-F0-9]{8}$/.test(orderRef)) {
     return NextResponse.json({ ok: false, error: "Invalid order reference" }, { status: 400 });
   }
-  if (!/^0x[a-f0-9]{64}$/.test(txHash)) {
+  // Loosened tx-hash validation. On-chain hashes are 66-char 0x…, but
+  // Binance internal transfers use identifiers like
+  // "Off-chain Transfer 391913256522" — we still accept those and let
+  // the Binance verifier do the match.
+  if (!txHash || txHash.length < 6) {
     return NextResponse.json(
-      { ok: false, error: "Transaction hash should be 66 chars starting with 0x" },
+      { ok: false, error: "Please paste a transaction hash or Binance transfer ID." },
       { status: 400 },
     );
   }
+  const isOnchainHash = /^0x[a-f0-9]{64}$/i.test(txHash);
 
   const supa = supabaseService();
 
@@ -71,30 +89,35 @@ export async function POST(req: Request) {
     );
   }
 
-  // Prevent replay of a tx hash across orders (index enforces this at
-  // DB level too, but a friendly error is better than a unique-violation).
-  if (order.tx_hash && order.tx_hash.toLowerCase() !== txHash) {
+  // Prevent replay across orders. Only enforce on real on-chain
+  // hashes — Binance internal transfer IDs are opaque and we don't
+  // want to false-positive collision on partial-string matches.
+  const txHashLower = txHash.toLowerCase();
+  if (order.tx_hash && order.tx_hash.toLowerCase() !== txHashLower) {
     return NextResponse.json(
       { ok: false, error: "A different tx hash was already submitted for this order." },
       { status: 400 },
     );
   }
-  const { data: dup } = await supa
-    .from("service_orders")
-    .select("order_ref")
-    .ilike("tx_hash", txHash)
-    .neq("order_ref", orderRef)
-    .maybeSingle();
-  if (dup) {
-    return NextResponse.json(
-      { ok: false, error: "This transaction is already linked to another order." },
-      { status: 400 },
-    );
+  if (isOnchainHash) {
+    const { data: dup } = await supa
+      .from("service_orders")
+      .select("order_ref")
+      .ilike("tx_hash", txHashLower)
+      .neq("order_ref", orderRef)
+      .maybeSingle();
+    if (dup) {
+      return NextResponse.json(
+        { ok: false, error: "This transaction is already linked to another order." },
+        { status: 400 },
+      );
+    }
   }
 
-  // Flip to verifying while we call BscScan. If BscScan is slow we
+  // Flip to verifying while we call the explorers. If they're slow we
   // still return within the timeout — the status stays "verifying"
-  // and the client can retry.
+  // and the client can retry. Store the raw text (may be a 0x hash
+  // OR "Off-chain Transfer 391913…").
   await supa
     .from("service_orders")
     .update({ status: "verifying", tx_hash: txHash })
@@ -102,58 +125,108 @@ export async function POST(req: Request) {
 
   const orderCreatedSec = Math.floor(new Date(order.created_at).getTime() / 1000);
 
-  const verdict = await verifyUsdtPayment({
-    txHash,
+  // ── STAGE 1: on-chain verification (BSC / Ethereum / Polygon) ──
+  //
+  // Only meaningful if the user gave us a proper 66-char 0x hash.
+  // Internal-transfer IDs like "Off-chain Transfer 391913256522" skip
+  // straight to stage 2 since block explorers have nothing to show.
+  let onchainReason: string | undefined;
+  if (isOnchainHash) {
+    const verdict = await verifyUsdtPayment({
+      txHash,
+      expectedRecipient: order.wallet_address,
+      expectedAmountUsdt: Number(order.total_usdt),
+      minTimestampSec: orderCreatedSec - 30 * 60,
+    });
+    if (verdict.ok) {
+      await supa
+        .from("service_orders")
+        .update({
+          status: "paid",
+          tx_verified_at: new Date().toISOString(),
+          amount_received_usdt: verdict.amountReceivedUsdt ?? null,
+          from_address: verdict.fromAddress ?? null,
+          tx_verification_error: null,
+          network: verdict.chain ?? order.network,
+        })
+        .eq("id", order.id);
+      return NextResponse.json({
+        ok: true,
+        status: "paid",
+        via: "onchain",
+        chain: verdict.chain,
+        amountReceivedUsdt: verdict.amountReceivedUsdt,
+        fromAddress: verdict.fromAddress,
+        explorerUrl: verdict.explorerUrl,
+      });
+    }
+    onchainReason = verdict.reason;
+  }
+
+  // ── STAGE 2: Binance deposit-history API ──
+  //
+  // Catches (a) internal Binance-to-Binance transfers that never touch
+  // the blockchain, and (b) real on-chain deposits that Binance has
+  // credited but the block explorer hasn't indexed yet.
+  const binanceVerdict = await verifyBinanceDeposit({
     expectedRecipient: order.wallet_address,
     expectedAmountUsdt: Number(order.total_usdt),
-    // 30-min grace period backward for clock skew + manual pre-payment
-    // before checkout. The verify function itself allows another 24h
-    // grace on top for slow-confirming txs.
-    minTimestampSec: orderCreatedSec - 30 * 60,
+    createdAtSec: orderCreatedSec,
+    txHash: isOnchainHash ? txHash : undefined,
   });
-
-  if (!verdict.ok) {
+  if (binanceVerdict.ok) {
+    const detectedNetwork = binanceVerdict.network?.toLowerCase() ?? order.network;
     await supa
       .from("service_orders")
       .update({
-        status: "awaiting_payment",           // let them try a different hash
-        tx_verification_error: verdict.reason ?? "unknown",
+        status: "paid",
+        tx_verified_at: new Date().toISOString(),
+        amount_received_usdt: binanceVerdict.amountReceivedUsdt ?? null,
+        tx_verification_error: null,
+        network: detectedNetwork,
+        // Persist Binance's txId (may be "Internal transfer XXXXX" for
+        // off-chain) so the admin can look it up later.
+        tx_hash: binanceVerdict.txId ?? txHash,
       })
       .eq("id", order.id);
     return NextResponse.json({
-      ok: false,
-      status: "failed",
-      error: verdict.reason ?? "Verification failed.",
+      ok: true,
+      status: "paid",
+      via: "binance",
+      transferType: binanceVerdict.transferType,
+      network: binanceVerdict.network,
+      amountReceivedUsdt: binanceVerdict.amountReceivedUsdt,
     });
   }
 
-  // Persist which chain the tx was actually verified on. Useful for
-  // support (admin can jump to the right explorer) and reporting
-  // (which chain do customers actually pay on).
-  const detectedNetwork = verdict.chain ?? order.network;
+  // ── Both stages failed → Telegram fallback ──
+  //
+  // Reset the order back to awaiting_payment so the user can retry,
+  // and surface both failure reasons + a pre-drafted Telegram deep
+  // link that includes the order ref for support.
+  const combinedReason = [
+    onchainReason ? `On-chain: ${onchainReason}` : null,
+    `Binance: ${binanceVerdict.reason}`,
+  ]
+    .filter(Boolean)
+    .join(" | ");
+
   await supa
     .from("service_orders")
     .update({
-      status: "paid",
-      tx_verified_at: new Date().toISOString(),
-      amount_received_usdt: verdict.amountReceivedUsdt ?? null,
-      from_address: verdict.fromAddress ?? null,
-      tx_verification_error: null,
-      network: detectedNetwork,
+      status: "awaiting_payment",
+      tx_verification_error: combinedReason.slice(0, 500),
     })
     .eq("id", order.id);
 
-  // TODO(admin panel): here is where we'd fire the supplier API call
-  // to actually deliver the order. For now we stop at "paid" and
-  // Piyush processes each one manually until the fulfilment worker
-  // ships.
+  const telegramUrl = telegramFallbackUrl(orderRef, Number(order.total_usdt));
 
   return NextResponse.json({
-    ok: true,
-    status: "paid",
-    chain: verdict.chain,
-    amountReceivedUsdt: verdict.amountReceivedUsdt,
-    fromAddress: verdict.fromAddress,
-    explorerUrl: verdict.explorerUrl,
+    ok: false,
+    status: "failed",
+    error:
+      "We couldn't verify this transaction automatically. If you paid via Binance internal transfer, or from an unsupported chain, contact us on Telegram with a screenshot — we'll verify manually within 15 minutes.",
+    detail: combinedReason,
+    telegramUrl,
   });
 }

@@ -34,10 +34,15 @@ interface VerifyResponse {
   ok: boolean;
   status?: string;
   error?: string;
+  detail?: string;
   amountReceivedUsdt?: number;
   fromAddress?: string;
   chain?: "bsc" | "ethereum" | "polygon";
   explorerUrl?: string;
+  via?: "onchain" | "binance";
+  transferType?: "onchain" | "internal";
+  network?: string;
+  telegramUrl?: string;
 }
 
 const CHAIN_LABEL: Record<string, string> = {
@@ -73,6 +78,8 @@ export function CheckoutPage() {
   } | null>(null);
   const [txHash, setTxHash] = useState("");
   const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [verifyDetail, setVerifyDetail] = useState<string | null>(null);
+  const [telegramUrl, setTelegramUrl] = useState<string | null>(null);
   const [verified, setVerified] = useState<VerifyResponse | null>(null);
 
   if (!hydrated) {
@@ -154,12 +161,17 @@ export function CheckoutPage() {
 
   const handleVerify = async () => {
     if (!order) return;
-    const cleanTx = txHash.trim().toLowerCase();
-    if (!/^0x[a-f0-9]{64}$/.test(cleanTx)) {
-      setVerifyError("Transaction hash should be 66 characters starting with 0x.");
+    // Accept both on-chain 0x hashes (66 chars) AND Binance internal
+    // transfer identifiers like "Off-chain Transfer 391913…". Only
+    // reject the obviously-too-short. Server does the real matching.
+    const cleanTx = txHash.trim();
+    if (cleanTx.length < 6) {
+      setVerifyError("Paste a transaction hash or Binance transfer ID.");
       return;
     }
     setVerifyError(null);
+    setVerifyDetail(null);
+    setTelegramUrl(null);
     setStage("verifying");
     try {
       const res = await fetch("/api/services/verify", {
@@ -171,10 +183,11 @@ export function CheckoutPage() {
       if (body.ok && body.status === "paid") {
         setVerified(body);
         setStage("paid");
-        // Clear cart on successful payment.
         clear();
       } else {
         setVerifyError(body.error ?? "Verification failed. Please check your tx hash.");
+        if (body.detail) setVerifyDetail(body.detail);
+        if (body.telegramUrl) setTelegramUrl(body.telegramUrl);
         setStage("pay");
       }
     } catch (err) {
@@ -201,6 +214,15 @@ export function CheckoutPage() {
             <div className="text-xs text-muted-foreground mt-4">
               Received: <b>{verified.amountReceivedUsdt.toFixed(2)} USDT</b>
               {verified.chain ? ` on ${CHAIN_LABEL[verified.chain] ?? verified.chain}` : ""}
+              {verified.via === "binance" && (
+                <span className="ml-1">
+                  {verified.transferType === "internal"
+                    ? "(via Binance internal transfer)"
+                    : verified.network
+                      ? `(via Binance on ${verified.network})`
+                      : "(via Binance)"}
+                </span>
+              )}
             </div>
           )}
           {verified?.explorerUrl && (
@@ -298,7 +320,7 @@ export function CheckoutPage() {
             type="text"
             value={txHash}
             onChange={(e) => setTxHash(e.target.value)}
-            placeholder="0x… (66 characters)"
+            placeholder="0x… (or Binance transfer ID)"
             spellCheck={false}
             autoCapitalize="off"
             className={cn(
@@ -307,20 +329,30 @@ export function CheckoutPage() {
             )}
           />
           <div className="text-[11px] text-muted-foreground mt-1.5">
-            Find this in your wallet&apos;s transaction history — it starts
-            with <code className="font-mono">0x</code>. You can also open{" "}
-            <a
-              href="https://bscscan.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-            >
-              bscscan.com
-            </a>{" "}
-            and copy the hash from your address history.
+            From your wallet: a 66-char <code className="font-mono">0x…</code> hash.{" "}
+            From a Binance internal transfer: the ID like{" "}
+            <code className="font-mono">Off-chain Transfer 391913…</code>{" "}
+            (both work — we detect automatically).
           </div>
           {verifyError && (
-            <div className="text-xs text-destructive mt-2">{verifyError}</div>
+            <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3 space-y-2">
+              <div className="text-xs text-destructive font-medium">{verifyError}</div>
+              {verifyDetail && (
+                <div className="text-[10px] text-muted-foreground font-mono break-words">
+                  {verifyDetail}
+                </div>
+              )}
+              {telegramUrl && (
+                <a
+                  href={telegramUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#229ED9] text-white px-4 py-2 text-xs font-semibold hover:brightness-110 transition"
+                >
+                  <TelegramIcon /> Send screenshot on Telegram
+                </a>
+              )}
+            </div>
           )}
         </div>
 
@@ -575,4 +607,14 @@ function targetPlaceholder(platform: string, category: string): string {
 
 function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// Telegram paper-plane icon — 16px inline SVG so the fallback button
+// looks like a real Telegram CTA without an image request.
+function TelegramIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.24 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z" />
+    </svg>
+  );
 }

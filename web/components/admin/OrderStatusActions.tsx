@@ -44,11 +44,30 @@ export function OrderStatusActions({
   };
 
   // Which transitions make sense from the current state.
+  const canManualPay = status === "awaiting_payment" || status === "verifying" || status === "failed";
   const canFulfill = status === "paid" || status === "fulfilling";
   const canFail = status !== "delivered" && status !== "refunded";
 
   return (
     <div className="flex items-center gap-2 flex-wrap text-xs">
+      {canManualPay && (
+        <button
+          type="button"
+          onClick={() => {
+            if (!confirm("Manually mark this order as PAID? Use only when you've verified the customer's payment out-of-band (e.g. via Telegram screenshot + Binance app).")) return;
+            setStatus("paid");
+          }}
+          disabled={!!busy}
+          className={cn(
+            "px-3 py-1.5 rounded-md font-medium transition-all",
+            busy === "paid"
+              ? "bg-muted text-muted-foreground cursor-wait"
+              : "bg-blue-600 text-white hover:brightness-110",
+          )}
+        >
+          {busy === "paid" ? "Marking…" : "Mark paid (manual)"}
+        </button>
+      )}
       {canFulfill && (
         <button
           type="button"
