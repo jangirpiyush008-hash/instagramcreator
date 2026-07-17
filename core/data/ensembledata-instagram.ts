@@ -9,11 +9,13 @@
 // https://ensembledata.com/apis/ig/*. Response is uniformly wrapped as
 // `{ data: <payload>, units_charged: N }` — we unwrap `data` before parsing.
 //
-// Endpoints wired here:
-//   GET  /apis/ig/user/info      — profile lookup by username
-//   GET  /apis/ig/user/posts     — recent feed posts
-//   GET  /apis/ig/user/reels     — reels (used to enrich getRecentPosts)
-//   GET  /apis/ig/post/comments  — comments on a specific media
+// Endpoints wired here (CONFIRMED paths — the docs I first fetched
+// used /ig/* shorthand but the real HTTP endpoints under the SDK's
+// hood use /instagram/* full-word paths):
+//   GET  /apis/instagram/user/detailed-info  — profile with follower / bio (getProfile)
+//   GET  /apis/instagram/user/posts          — recent feed posts
+//   GET  /apis/instagram/user/followers      — follower sample
+//   GET  /apis/instagram/post/comments       — comments on a specific media
 //
 // Errors bubble up as HandleNotFoundError / PrivateAccountError /
 // ProviderRateLimitError / DataSourceError so the ChainAdapter can
@@ -176,7 +178,7 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
       throw new DataSourceError(`ensembledata-instagram doesn't serve ${platform}`);
     }
     const clean = handle.replace(/^@/, "").trim();
-    const raw = await this.get<{ user?: EDUser } | EDUser>("/ig/user/info", {
+    const raw = await this.get<{ user?: EDUser } | EDUser>("/instagram/user/detailed-info", {
       username: clean,
     });
     // Endpoint sometimes returns { user: {...} }, sometimes { ...user }.
@@ -230,7 +232,7 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
     if (platform !== "instagram") return [];
     const clean = handle.replace(/^@/, "").trim();
     const raw = await this.get<{ items?: EDMedia[] } | EDMedia[]>(
-      "/ig/user/posts",
+      "/instagram/user/posts",
       { username: clean, depth: "1" },
     );
     const items = Array.isArray(raw) ? raw : (raw?.items ?? []);
@@ -248,7 +250,7 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
     if (posts.length === 0) return super.getRecentComments(platform, handle, n);
     const target = posts[0]!;
     const raw = await this.get<{ items?: EDComment[] } | EDComment[]>(
-      "/ig/post/comments",
+      "/instagram/post/comments",
       { post_id: target.id, depth: "1" },
     );
     const items = Array.isArray(raw) ? raw : (raw?.items ?? []);
@@ -277,16 +279,20 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
   ): Promise<FollowerLite[]> {
     if (platform !== "instagram") return [];
     const clean = handle.replace(/^@/, "").trim();
-    const info = await this.get<{ user?: EDUser } | EDUser>("/ig/user/info", {
+    const info = await this.get<{ user?: EDUser } | EDUser>("/instagram/user/detailed-info", {
       username: clean,
     });
     const user: EDUser = "user" in (info as { user?: EDUser })
       ? (info as { user: EDUser }).user
       : (info as EDUser);
     const userId = String(user?.pk ?? user?.id ?? "");
-    if (!userId) throw new HandleNotFoundError(clean, "instagram");
+    if (!userId) {
+      throw new DataSourceError(
+        `ensembledata could not resolve pk for ${clean} — falling through`,
+      );
+    }
     const raw = await this.get<{ items?: Array<{ username?: string; full_name?: string }> } | Array<{ username?: string; full_name?: string }>>(
-      "/ig/user/followers",
+      "/instagram/user/followers",
       { user_id: userId },
     );
     const items = Array.isArray(raw) ? raw : (raw?.items ?? []);
