@@ -14,9 +14,11 @@ import { cn } from "@/web/lib/cn";
 // Sidebar changes shape per segment:
 //   Consumers  → All / Active subscribers / Free tier / + Add consumer
 //   Developers → All / By wallet / By usage / + Add developer
-//   Growth     → All orders / Awaiting / Paid / Delivered
+//
+// The Growth (SMM services) segment moved to the separate SocialMintPro
+// admin panel — this shell is now consumers + developers only.
 
-type Segment = "consumers" | "developers" | "growth";
+type Segment = "consumers" | "developers";
 
 interface NavItem {
   href: string;
@@ -38,26 +40,6 @@ function navFor(seg: Segment): NavGroup[] {
     title: "System",
     items: [{ href: "/admin/providers", label: "Data providers" }],
   };
-  if (seg === "growth") {
-    return [
-      overview,
-      {
-        title: "Growth orders",
-        items: [
-          { href: "/admin/orders?seg=growth", label: "All orders" },
-          { href: "/admin/orders?seg=growth&status=awaiting_payment", label: "Awaiting payment" },
-          { href: "/admin/orders?seg=growth&status=paid", label: "Paid — needs delivery" },
-          { href: "/admin/orders?seg=growth&status=delivered", label: "Delivered" },
-          { href: "/admin/orders?seg=growth&status=failed", label: "Failed" },
-        ],
-      },
-      {
-        title: "Catalog",
-        items: [{ href: "/admin/services?seg=growth", label: "Bulk edit prices" }],
-      },
-      system,
-    ];
-  }
   if (seg === "consumers") {
     return [
       overview,
@@ -172,13 +154,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
       {/* MAIN */}
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* TOP BAR — 3-way segment toggle on the right */}
+        {/* TOP BAR — consumers/developers segment toggle */}
         <div className="border-b border-neutral-200 bg-white">
           <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
             <div className="text-xs text-neutral-500">
               {seg === "consumers" && "Viewing consumer web-app users"}
               {seg === "developers" && "Viewing API developers + wallet balances"}
-              {seg === "growth" && "Viewing growth-services orders (SMM vertical)"}
             </div>
             <SegmentToggle seg={seg} onChange={setSeg} />
           </div>
@@ -193,7 +174,6 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
 function parseSeg(raw: string | null): Segment {
   if (raw === "developers") return "developers";
-  if (raw === "growth") return "growth";
   return "consumers";
 }
 
@@ -211,12 +191,11 @@ function isActive(pathname: string, currentSearch: URLSearchParams, item: NavIte
   return true;
 }
 
-// ── Segment toggle: 3-way ─────────────────────────────────────────────
+// ── Segment toggle: 2-way ─────────────────────────────────────────────
 function SegmentToggle({ seg, onChange }: { seg: Segment; onChange: (s: Segment) => void }) {
   const opts: { id: Segment; label: string; icon: string }[] = [
     { id: "consumers", label: "Consumers", icon: "👥" },
     { id: "developers", label: "Developers", icon: "🧑‍💻" },
-    { id: "growth", label: "Growth", icon: "📈" },
   ];
   return (
     <div className="inline-flex items-center rounded-full border border-neutral-200 bg-white p-1 shadow-sm">

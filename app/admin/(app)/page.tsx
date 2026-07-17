@@ -9,10 +9,10 @@ export const metadata: Metadata = {
 };
 
 // Overview KPI cards. Segment-scoped per owner request:
-//   Consumers  → Total users + Active subscriptions (that's it — no
-//                growth-orders, no api-keys, no wallet noise here)
+//   Consumers  → Total users + Active subscriptions
 //   Developers → Total developers + Active API keys + Wallet outstanding
-// Growth orders info lives ONLY on /admin/orders now.
+// The Growth (SMM services) segment lives in the separate SocialMintPro
+// repo now — DecodeCreator no longer surfaces service_orders.
 
 async function loadConsumerKpis() {
   const supa = supabaseService();
@@ -46,60 +46,18 @@ async function loadDeveloperKpis() {
   return { developerCount, apiKeys: apiKeys ?? 0, walletTotal };
 }
 
-async function loadGrowthKpis() {
-  const supa = supabaseService();
-  const [
-    { count: awaiting },
-    { count: paid },
-    { count: delivered },
-    { count: failed },
-    { data: paidRev },
-  ] = await Promise.all([
-    supa
-      .from("service_orders")
-      .select("id", { count: "exact", head: true })
-      .in("status", ["awaiting_payment", "verifying"]),
-    supa
-      .from("service_orders")
-      .select("id", { count: "exact", head: true })
-      .in("status", ["paid", "fulfilling"]),
-    supa
-      .from("service_orders")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "delivered"),
-    supa
-      .from("service_orders")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "failed"),
-    supa
-      .from("service_orders")
-      .select("total_usd")
-      .in("status", ["paid", "fulfilling", "delivered"])
-      .limit(1000),
-  ]);
-  const revenueUsd = (paidRev ?? []).reduce((acc, r) => acc + Number(r.total_usd ?? 0), 0);
-  return {
-    awaiting: awaiting ?? 0,
-    paid: paid ?? 0,
-    delivered: delivered ?? 0,
-    failed: failed ?? 0,
-    revenueUsd,
-  };
-}
-
 export default async function AdminOverviewPage({
   searchParams,
 }: {
   searchParams: Promise<{ seg?: string }>;
 }) {
   const { seg: segRaw = "consumers" } = await searchParams;
-  const seg: "consumers" | "developers" | "growth" =
-    segRaw === "developers" ? "developers" : segRaw === "growth" ? "growth" : "consumers";
+  const seg: "consumers" | "developers" =
+    segRaw === "developers" ? "developers" : "consumers";
 
-  const [consumer, developer, growth] = await Promise.all([
+  const [consumer, developer] = await Promise.all([
     seg === "consumers" ? loadConsumerKpis().catch(() => null) : Promise.resolve(null),
     seg === "developers" ? loadDeveloperKpis().catch(() => null) : Promise.resolve(null),
-    seg === "growth" ? loadGrowthKpis().catch(() => null) : Promise.resolve(null),
   ]);
 
   return (
@@ -109,7 +67,6 @@ export default async function AdminOverviewPage({
         <p className="text-sm text-neutral-500 mt-1">
           {seg === "consumers" && "Web-app users and subscriptions."}
           {seg === "developers" && "API developers with active keys and outstanding wallet credits."}
-          {seg === "growth" && "Growth-services (SMM vertical) order flow."}
         </p>
       </header>
 
@@ -132,47 +89,17 @@ export default async function AdminOverviewPage({
         )
       )}
 
-      {seg === "growth" && (
-        growth === null ? <ErrorCard /> : (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
-            <KpiCard label="Awaiting payment" value={growth.awaiting.toLocaleString()} sub="pending USDT" highlight={growth.awaiting > 0} />
-            <KpiCard label="Paid — needs delivery" value={growth.paid.toLocaleString()} sub="verify + fulfill" highlight={growth.paid > 0} />
-            <KpiCard label="Delivered" value={growth.delivered.toLocaleString()} sub="lifetime" />
-            <KpiCard label="Failed" value={growth.failed.toLocaleString()} sub="lifetime" />
-            <KpiCard label="Revenue" value={`$${growth.revenueUsd.toFixed(2)}`} sub="paid orders total (USD)" />
-          </div>
-        )
-      )}
-
-      {/* Quick links — segment-appropriate */}
       <div className="grid sm:grid-cols-2 gap-3 max-w-3xl">
-        {seg !== "growth" ? (
-          <>
-            <QuickCard
-              href={`/admin/users?seg=${seg}`}
-              title={seg === "consumers" ? "Manage consumers" : "Manage developers"}
-              blurb="Full list, tier + credits, per-user detail with actions."
-            />
-            <QuickCard
-              href={`/admin/users/new?seg=${seg}`}
-              title="Add a user"
-              blurb="Comp a customer, onboard a pilot, or invite by email."
-            />
-          </>
-        ) : (
-          <>
-            <QuickCard
-              href="/admin/orders?seg=growth&status=awaiting_payment"
-              title="Awaiting payment"
-              blurb="Orders where the customer hasn't submitted a tx hash yet."
-            />
-            <QuickCard
-              href="/admin/orders?seg=growth&status=paid"
-              title="Paid — needs delivery"
-              blurb="Verify + mark fulfilled once the supplier panel delivers."
-            />
-          </>
-        )}
+        <QuickCard
+          href={`/admin/users?seg=${seg}`}
+          title={seg === "consumers" ? "Manage consumers" : "Manage developers"}
+          blurb="Full list, tier + credits, per-user detail with actions."
+        />
+        <QuickCard
+          href={`/admin/users/new?seg=${seg}`}
+          title="Add a user"
+          blurb="Comp a customer, onboard a pilot, or invite by email."
+        />
       </div>
     </div>
   );

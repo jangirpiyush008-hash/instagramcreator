@@ -26,8 +26,6 @@ export default function robots(): MetadataRoute.Robots {
           "/v1/",
           "/checkout/",
           "/embed/",
-          "/services",
-          "/services/",
           "/*?fresh=1",
           "/*?debug=1",
           "/*?auth=*",

@@ -9,7 +9,6 @@ import { AuthModal } from "@/web/components/AuthModal";
 import { CookieBanner, CookiePreferencesLink } from "@/web/components/CookieBanner";
 import { GAPageview } from "@/web/components/GAPageview";
 import { getCurrentUser } from "@/web/lib/supabase-server";
-import { CartProvider } from "@/web/components/services/CartContext";
 import { supabaseService } from "@/core/database/supabase";
 import { getSubscriptionCountdown } from "@/core/billing/entitlements";
 import { ProfileMenu } from "@/web/components/ProfileMenu";
@@ -380,7 +379,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
       </head>
       <body>
-        <CartProvider>
         <div className="min-h-screen flex flex-col">
           <header className="sticky top-0 z-30 backdrop-blur-md bg-background/70 border-b border-border/60">
             <div className="container py-4 flex items-center justify-between">
@@ -553,7 +551,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Suspense fallback={null}>
           <GAPageview measurementId={GA_MEASUREMENT_ID} />
         </Suspense>
-        </CartProvider>
       </body>
     </html>
   );
