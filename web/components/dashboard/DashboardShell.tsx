@@ -340,6 +340,9 @@ function UserPill({
   onClick?: () => void;
 }) {
   const initial = (user.name ?? user.email).charAt(0).toUpperCase();
+  // Email lives in the button's tooltip (hover to reveal) instead of as a
+  // separate always-visible line. Keeps the header lean and lets the
+  // "Account" / display-name breathe on narrower screens.
   const inner = (
     <>
       {user.avatarUrl ? (
@@ -356,16 +359,16 @@ function UserPill({
       )}
       <div className="hidden md:block text-left">
         <div className="text-xs font-semibold leading-tight">{user.name ?? "Account"}</div>
-        <div className="text-[10px] text-foreground/60 truncate max-w-[160px]">{user.email}</div>
       </div>
     </>
   );
-  if (!onClick) return <div className="flex items-center gap-2 text-sm">{inner}</div>;
+  const tooltip = `${user.name ? `${user.name} · ` : ""}${user.email} — open profile`;
+  if (!onClick) return <div className="flex items-center gap-2 text-sm" title={tooltip}>{inner}</div>;
   return (
     <button
       type="button"
       onClick={onClick}
-      title="Open profile"
+      title={tooltip}
       className="flex items-center gap-2 text-sm rounded-full pr-3 pl-0.5 py-0.5 hover:bg-muted/60 transition-colors"
     >
       {inner}
