@@ -28,3 +28,18 @@ export const TabContext = createContext<{
 export function useTab() {
   return useContext(TabContext);
 }
+
+// Shared "current handle" state. Set by the Overview master-search
+// (localStorage-backed under 'dc-handle'), consumed by ToolWorkspace so
+// clicking a sidebar tool pre-fills + auto-submits the same handle
+// instead of re-asking. Combined with CachedAdapter (24h profile TTL,
+// 6h posts TTL), the first tool click hits the API, every follow-up
+// click hits the primitive cache and renders in ~50ms.
+export const HandleContext = createContext<{
+  handle: string | null;
+  setHandle: (h: string | null) => void;
+}>({ handle: null, setHandle: () => undefined });
+
+export function useHandle() {
+  return useContext(HandleContext);
+}

@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
+import { normalizeHandle, isValidHandle } from "@/core/utils/handle";
+import { useHandle, usePlatform } from "./PlatformContext";
 
 // Landing panel for the dashboard. Consumer-focused — API-side details
 // (keys, tiers, usage log) live on the Developer tab.
@@ -39,15 +42,30 @@ export function OverviewPanel({
 }: Props) {
   const remaining = Math.max(0, scansLimit - scansUsed);
   const pct = scansLimit > 0 ? Math.min(100, Math.round((scansUsed / scansLimit) * 100)) : 0;
+  const platform = usePlatform();
+  const { handle: currentHandle, setHandle } = useHandle();
 
   return (
     <div className="space-y-8 max-w-5xl">
       <header>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Overview</h1>
         <p className="text-foreground/70 mt-1 text-sm">
-          Everything you&apos;ve done on DecodeCreator at a glance.
+          Type a handle once — every tool below picks it up automatically.
         </p>
       </header>
+
+      {/*
+        Master search. Sets the shared HandleContext so every tool the
+        user opens next pre-fills with this handle. Also POSTs to
+        /api/prewarm which primes the primitive cache — first tool click
+        will render in ~50ms instead of waiting for a provider call.
+      */}
+      <MasterSearch
+        platform={platform}
+        currentHandle={currentHandle}
+        onSet={(h) => setHandle(h)}
+        onOpenTool={onOpenTab}
+      />
 
       {/* KPI grid */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -199,5 +217,158 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
     <div className="flex items-center gap-3 mb-3">
       <h2 className="text-sm font-bold uppercase tracking-wider text-foreground/70">{children}</h2>
     </div>
+  );
+}
+
+// Master search — the "one input, unlock every tool" affordance. Not
+// billed as a scan; just primes the profile + posts cache and sets the
+// shared handle context.
+function MasterSearch({
+  platform,
+  currentHandle,
+  onSet,
+  onOpenTool,
+}: {
+  platform: string;
+  currentHandle: string | null;
+  onSet: (h: string | null) => void;
+  onOpenTool: (toolId: string) => void;
+}) {
+  const [input, setInput] = useState(currentHandle ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [profile, setProfile] = useState<null | {
+    handle: string;
+    displayName: string | null;
+    followers: number;
+    verified: boolean;
+    avatarUrl: string | null;
+  }>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setProfile(null);
+    const clean = normalizeHandle(input);
+    if (!clean || !isValidHandle(clean)) {
+      setError("Enter a valid handle (letters, numbers, dots, dashes, underscores).");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/prewarm", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ platform, handle: clean }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(json.message ?? json.error ?? "Prewarm failed");
+        return;
+      }
+      setProfile(json.profile);
+      onSet(clean);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Prewarm failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function clear() {
+    setInput("");
+    setProfile(null);
+    setError(null);
+    onSet(null);
+  }
+
+  return (
+    <section className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/5 to-background p-5 sm:p-6">
+      <div className="text-xs uppercase tracking-wider text-primary font-semibold mb-2">
+        Scan a creator once
+      </div>
+      <form onSubmit={submit} className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground/40" aria-hidden>
+            🔍
+          </span>
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={`Enter ${platform} handle (e.g., mkbhd)`}
+            className="w-full h-12 rounded-lg border border-border bg-background pl-10 pr-4 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40"
+            disabled={busy}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={busy || !input.trim()}
+          className="h-12 rounded-lg bg-gradient-ig text-white px-6 text-sm font-semibold hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {busy ? "Scanning…" : "Scan →"}
+        </button>
+      </form>
+      {error && (
+        <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          {error}
+        </div>
+      )}
+      {profile && (
+        <div className="mt-4 flex flex-wrap items-center gap-4 rounded-lg border border-border bg-card/70 p-3">
+          {profile.avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={profile.avatarUrl}
+              alt=""
+              className="h-12 w-12 rounded-full border border-border object-cover"
+            />
+          ) : (
+            <div className="h-12 w-12 rounded-full bg-gradient-ig text-white grid place-items-center text-lg font-bold">
+              {profile.handle.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold truncate">
+              @{profile.handle}
+              {profile.verified && <span className="ml-1 text-primary" title="Verified">✓</span>}
+            </div>
+            <div className="text-xs text-foreground/60">
+              {profile.followers.toLocaleString()} followers
+              {profile.displayName && ` · ${profile.displayName}`}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onOpenTool("engagement-rate")}
+              className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted/60"
+            >
+              Engagement rate →
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenTool("fake-follower")}
+              className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted/60"
+            >
+              Fake-follower check →
+            </button>
+            <button
+              type="button"
+              onClick={clear}
+              className="rounded-full text-xs text-foreground/60 hover:text-foreground px-2 py-1.5"
+              title="Clear"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+      {!profile && !error && (
+        <p className="mt-3 text-xs text-foreground/60">
+          One scan primes every tool — click any left-sidebar tool and it&apos;ll load instantly.
+        </p>
+      )}
+    </section>
   );
 }

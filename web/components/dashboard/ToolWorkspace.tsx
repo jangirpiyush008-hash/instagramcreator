@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Platform } from "@/core/types";
 import { ScanResult } from "@/web/components/ScanResult";
 import { normalizeHandle, isValidHandle } from "@/core/utils/handle";
-import { usePlatform } from "./PlatformContext";
+import { useHandle, usePlatform } from "./PlatformContext";
 import { creditCost } from "@/core/api/credits";
 
 // Inline workspace for a single tool. Rendered inside DashboardShell's
@@ -36,12 +36,30 @@ export function ToolWorkspace({
   supportedPlatforms,
 }: Props) {
   const platform = usePlatform();
-  const [handleInput, setHandleInput] = useState("");
+  const { handle: sharedHandle, setHandle } = useHandle();
+  const [handleInput, setHandleInput] = useState(sharedHandle ?? "");
   // The handle that actually gets sent — we set it on submit so ScanResult
   // only mounts (and fetches) when the user asks for it, not on every
-  // keystroke.
-  const [submittedHandle, setSubmittedHandle] = useState<string | null>(null);
+  // keystroke. When the user pre-scanned via Overview master-search, we
+  // auto-submit here so the tool renders immediately on tab switch (uses
+  // the primitive cache — no extra API cost).
+  const [submittedHandle, setSubmittedHandle] = useState<string | null>(
+    sharedHandle ?? null,
+  );
   const [error, setError] = useState<string | null>(null);
+
+  // React to Overview → tool switches: if the shared handle changes while
+  // this workspace is mounted, re-run against the new handle. Also
+  // hydrates on first mount when the shared handle came from localStorage.
+  useEffect(() => {
+    if (sharedHandle && sharedHandle !== submittedHandle) {
+      setHandleInput(sharedHandle);
+      setSubmittedHandle(sharedHandle);
+    }
+    // We deliberately don't depend on submittedHandle — clearing it
+    // shouldn't force a re-fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharedHandle]);
 
   const supported = supportedPlatforms.includes(platform);
   const cost = creditCost(toolId);
@@ -56,11 +74,16 @@ export function ToolWorkspace({
       return;
     }
     setSubmittedHandle(h);
+    // Promote this handle to the shell-wide shared handle so if the user
+    // switches tools next, the new tool already has it pre-filled.
+    setHandle(h);
   }
 
   function tryPopular(h: string) {
+    const clean = normalizeHandle(h);
     setHandleInput(h);
-    setSubmittedHandle(normalizeHandle(h));
+    setSubmittedHandle(clean);
+    setHandle(clean);
   }
 
   return (

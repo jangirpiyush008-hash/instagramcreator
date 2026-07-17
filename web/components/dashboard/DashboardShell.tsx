@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Platform } from "@/core/types";
 import { TOOL_CATEGORIES } from "@/core/tools/registry-helpers";
 import { TOOLS } from "@/core/tools/registry";
-import { PlatformContext, TabContext } from "./PlatformContext";
+import { HandleContext, PlatformContext, TabContext } from "./PlatformContext";
 
 // GramScraper-style dashboard shell. Sidebar clicks stay on the SAME URL
 // (they just swap ?tab=X in the query), so the whole dashboard behaves
@@ -57,6 +57,10 @@ export function DashboardShell({
 }) {
   const [platform, setPlatform] = useState<Platform>("instagram");
   const [platformReady, setPlatformReady] = useState(false);
+  // Handle set by Overview master-search — pre-fills each tool workspace
+  // so users type once, then click through tools without re-entering the
+  // handle. localStorage-persisted so a page reload keeps context.
+  const [currentHandle, setCurrentHandleState] = useState<string | null>(null);
   // activeTab lives client-side to keep tab switches near-instant. Was
   // going through router.push before, which re-ran /account's 7 Supabase
   // queries on every click. The URL is still synced via history.replaceState
@@ -69,10 +73,24 @@ export function DashboardShell({
       if (stored === "instagram" || stored === "tiktok" || stored === "youtube") {
         setPlatform(stored);
       }
+      const storedHandle = window.localStorage.getItem("dc-handle");
+      if (storedHandle && storedHandle.trim().length > 0) {
+        setCurrentHandleState(storedHandle);
+      }
     } catch {
       // localStorage disabled — stick with default.
     }
     setPlatformReady(true);
+  }, []);
+
+  const setCurrentHandle = useCallback((h: string | null) => {
+    setCurrentHandleState(h);
+    try {
+      if (h) window.localStorage.setItem("dc-handle", h);
+      else window.localStorage.removeItem("dc-handle");
+    } catch {
+      // ignore
+    }
   }, []);
 
   // Keep local state in sync if the parent server component re-renders
@@ -113,10 +131,15 @@ export function DashboardShell({
     () => ({ activeTab, setTab }),
     [activeTab, setTab],
   );
+  const handleContextValue = useMemo(
+    () => ({ handle: currentHandle, setHandle: setCurrentHandle }),
+    [currentHandle, setCurrentHandle],
+  );
 
   return (
     <TabContext.Provider value={tabContextValue}>
     <PlatformContext.Provider value={contextValue}>
+    <HandleContext.Provider value={handleContextValue}>
       <div className="min-h-[calc(100vh-4rem)] flex">
         {/* SIDEBAR */}
         <aside className="hidden md:flex md:w-64 lg:w-72 shrink-0 border-r border-border bg-card/40 flex-col">
@@ -200,6 +223,7 @@ export function DashboardShell({
           <div className="flex-1 px-4 sm:px-6 py-6 lg:py-8">{children}</div>
         </div>
       </div>
+    </HandleContext.Provider>
     </PlatformContext.Provider>
     </TabContext.Provider>
   );
