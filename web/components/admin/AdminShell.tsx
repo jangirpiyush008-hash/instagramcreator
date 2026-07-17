@@ -32,6 +32,12 @@ function navFor(seg: Segment): NavGroup[] {
   const overview: NavGroup = {
     items: [{ href: `/admin?seg=${seg}`, label: "Overview", exact: true }],
   };
+  // Shared "System" group available in all segments — provider chain
+  // health, breaker resets, latency stats. Same link regardless of seg.
+  const system: NavGroup = {
+    title: "System",
+    items: [{ href: "/admin/providers", label: "Data providers" }],
+  };
   if (seg === "growth") {
     return [
       overview,
@@ -49,6 +55,7 @@ function navFor(seg: Segment): NavGroup[] {
         title: "Catalog",
         items: [{ href: "/admin/services?seg=growth", label: "Bulk edit prices" }],
       },
+      system,
     ];
   }
   if (seg === "consumers") {
@@ -63,6 +70,7 @@ function navFor(seg: Segment): NavGroup[] {
           { href: `/admin/users/new?seg=consumers`, label: "+ Add consumer" },
         ],
       },
+      system,
     ];
   }
   // developers
@@ -77,6 +85,7 @@ function navFor(seg: Segment): NavGroup[] {
         { href: `/admin/users/new?seg=developers`, label: "+ Add developer" },
       ],
     },
+    system,
   ];
 }
 
