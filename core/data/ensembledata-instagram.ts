@@ -106,7 +106,7 @@ interface EDCommentNode {
 const SDK_TIMEOUT_SEC = 14;
 
 export class EnsembleDataInstagramAdapter extends MockProvider implements DataAdapter {
-  private readonly client: ReturnType<typeof EDClient> | null;
+  private readonly client: EDClient | null;
 
   // Per-instance memo. /instagram/user/detailed-info returns the last
   // ~12 posts inline, so within one tool run we share ONE call across
@@ -119,8 +119,9 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
     // Strip wrapping quotes / whitespace that Railway sometimes preserves.
     const raw = (token ?? process.env.ENSEMBLEDATA_TOKEN ?? "").trim();
     const clean = raw.replace(/^["']|["']$/g, "");
+    // EDClient is a class — must be constructed with `new`.
     this.client = clean
-      ? EDClient({ token: clean, timeout: SDK_TIMEOUT_SEC })
+      ? new EDClient({ token: clean, timeout: SDK_TIMEOUT_SEC })
       : null;
   }
 

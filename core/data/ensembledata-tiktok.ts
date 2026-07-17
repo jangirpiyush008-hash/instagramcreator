@@ -91,14 +91,15 @@ interface EDTikTokComment {
 }
 
 export class EnsembleDataTikTokAdapter extends MockProvider implements DataAdapter {
-  private readonly client: ReturnType<typeof EDClient> | null;
+  private readonly client: EDClient | null;
 
   constructor(token?: string) {
     super("tiktok");
     const raw = (token ?? process.env.ENSEMBLEDATA_TOKEN ?? "").trim();
     const clean = raw.replace(/^["']|["']$/g, "");
+    // EDClient is a class — must be constructed with `new`.
     this.client = clean
-      ? EDClient({ token: clean, timeout: SDK_TIMEOUT_SEC })
+      ? new EDClient({ token: clean, timeout: SDK_TIMEOUT_SEC })
       : null;
   }
 

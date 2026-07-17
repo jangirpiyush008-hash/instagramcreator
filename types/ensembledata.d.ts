@@ -54,14 +54,13 @@ declare module "ensembledata" {
     ): Promise<EDResponse<unknown>>;
   }
 
-  interface EDClientInstance {
-    instagram: EDInstagram;
-    tiktok: EDTiktok;
+  export class EDClient {
+    constructor(options: {
+      token: string;
+      timeout?: number;
+      maxNetworkRetries?: number;
+    });
+    readonly instagram: EDInstagram;
+    readonly tiktok: EDTiktok;
   }
-
-  export function EDClient(options: {
-    token: string;
-    timeout?: number;
-    maxNetworkRetries?: number;
-  }): EDClientInstance;
 }
