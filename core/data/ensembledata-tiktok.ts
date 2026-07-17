@@ -108,8 +108,13 @@ export class EnsembleDataTikTokAdapter extends MockProvider implements DataAdapt
       if (res.status === 402 || res.status === 429) {
         throw new ProviderRateLimitError("ensembledata", path);
       }
+      // 404 is ambiguous (broken endpoint / auth / user missing).
+      // Treat as provider failure so chain falls through to tikwm /
+      // RapidAPI which can authoritatively answer.
       if (res.status === 404) {
-        throw new HandleNotFoundError("", "tiktok");
+        throw new DataSourceError(
+          `ensembledata GET ${path} returned 404 — falling through`,
+        );
       }
       if (!res.ok) {
         const body = await res.text().catch(() => "");
@@ -146,9 +151,15 @@ export class EnsembleDataTikTokAdapter extends MockProvider implements DataAdapt
       ? (raw as { user: EDTikTokUser }).user
       : (raw as EDTikTokUser);
     const returnedHandle = user?.unique_id ?? user?.username;
-    if (!returnedHandle) throw new HandleNotFoundError(clean, "tiktok");
+    if (!returnedHandle) {
+      throw new DataSourceError(
+        `ensembledata /tt/user/info returned no user for ${clean} — falling through`,
+      );
+    }
     if (returnedHandle.toLowerCase() !== clean.toLowerCase()) {
-      throw new HandleNotFoundError(clean, "tiktok");
+      throw new DataSourceError(
+        `ensembledata returned different user (${returnedHandle}) than requested (${clean}) — falling through`,
+      );
     }
     if (user.private_account) {
       throw new PrivateAccountError(clean, "tiktok");
@@ -221,27 +232,21 @@ export class EnsembleDataTikTokAdapter extends MockProvider implements DataAdapt
     throw new DataSourceError("ensembledata-tt: getFollowerSample not implemented");
   }
 
+  // Same trust-behavior refactor as ensembledata-instagram: delegate
+  // to getProfile so a suspect Ensembledata response falls through
+  // to tikwm / RapidAPI instead of returning a false "available: true".
   override async isHandleAvailable(
     platform: Platform,
     handle: string,
   ): Promise<UsernameAvailability> {
     if (platform !== "tiktok") return super.isHandleAvailable(platform, handle);
-    const clean = handle.replace(/^@/, "").trim();
     try {
-      const raw = await this.get<{ user?: EDTikTokUser } | EDTikTokUser>(
-        "/tt/user/info",
-        { username: clean },
-      );
-      const user: EDTikTokUser = "user" in (raw as { user?: EDTikTokUser })
-        ? (raw as { user: EDTikTokUser }).user
-        : (raw as EDTikTokUser);
-      const returned = user?.unique_id ?? user?.username;
-      if (!returned) return { platform: "tiktok", available: true };
+      const profile = await this.getProfile(platform, handle);
       return {
         platform: "tiktok",
         available: false,
         takenBy: {
-          followers: Number(user.follower_count ?? 0),
+          followers: profile.followers,
           lastActiveAgo: "recently",
         },
       };

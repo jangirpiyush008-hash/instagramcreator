@@ -133,8 +133,18 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
       if (res.status === 429) {
         throw new ProviderRateLimitError("ensembledata", path);
       }
+      // 404 from Ensembledata is ambiguous — it can mean "endpoint
+      // path wrong / auth wrong / user genuinely missing." Because
+      // we can't distinguish, treat as a provider-side failure so
+      // the chain falls through to Hiker/RapidAPI (which CAN
+      // authoritatively answer "does this user exist"). Genuine
+      // "user not found" is detected downstream via empty payload,
+      // and only thrown as HandleNotFoundError after all providers
+      // have been consulted.
       if (res.status === 404) {
-        throw new HandleNotFoundError("", "instagram");
+        throw new DataSourceError(
+          `ensembledata GET ${path} returned 404 — probably a broken endpoint path or auth issue, falling through`,
+        );
       }
       if (!res.ok) {
         const body = await res.text().catch(() => "");
@@ -173,13 +183,23 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
     const user: EDUser = "user" in (raw as { user?: EDUser })
       ? (raw as { user: EDUser }).user
       : (raw as EDUser);
+    // Any "user missing" signal from Ensembledata is treated as
+    // provider-side failure (DataSourceError), not authoritative
+    // HandleNotFoundError. Reason: we don't yet know Ensembledata's
+    // exact endpoint contract for "user genuinely doesn't exist",
+    // so the safe move is to fall through to Hiker / RapidAPI which
+    // CAN authoritatively answer.
     if (!user || !user.username) {
-      throw new HandleNotFoundError(clean, "instagram");
+      throw new DataSourceError(
+        `ensembledata /ig/user/info returned no user for ${clean} — falling through`,
+      );
     }
     // Reject provider fuzzy-match: if the returned username doesn't match
-    // what we asked for, treat as "not found" — same guard as Hiker.
+    // what we asked for, also fall through.
     if (user.username.toLowerCase() !== clean.toLowerCase()) {
-      throw new HandleNotFoundError(clean, "instagram");
+      throw new DataSourceError(
+        `ensembledata returned different user (${user.username}) than requested (${clean}) — falling through`,
+      );
     }
     if (user.is_private) {
       throw new PrivateAccountError(clean, "instagram");
@@ -277,27 +297,22 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
   }
 
   // ── isHandleAvailable ─────────────────────────────────────────────────────
+  // Delegate to getProfile so we share its "trust behavior": if
+  // Ensembledata can't confidently answer, we throw DataSourceError
+  // and let the chain ask Hiker/RapidAPI. Never returns "available:
+  // true" from a suspect Ensembledata response.
   override async isHandleAvailable(
     platform: Platform,
     handle: string,
   ): Promise<UsernameAvailability> {
     if (platform !== "instagram") return super.isHandleAvailable(platform, handle);
-    const clean = handle.replace(/^@/, "").trim();
     try {
-      const raw = await this.get<{ user?: EDUser } | EDUser>("/ig/user/info", {
-        username: clean,
-      });
-      const user: EDUser = "user" in (raw as { user?: EDUser })
-        ? (raw as { user: EDUser }).user
-        : (raw as EDUser);
-      if (!user?.username) {
-        return { platform: "instagram", available: true };
-      }
+      const profile = await this.getProfile(platform, handle);
       return {
         platform: "instagram",
         available: false,
         takenBy: {
-          followers: Number(user.follower_count ?? 0),
+          followers: profile.followers,
           lastActiveAgo: "recently",
         },
       };
