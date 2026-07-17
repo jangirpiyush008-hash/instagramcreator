@@ -12,6 +12,7 @@ import { getCurrentUser } from "@/web/lib/supabase-server";
 import { CartProvider } from "@/web/components/services/CartContext";
 import { supabaseService } from "@/core/database/supabase";
 import { getSubscriptionCountdown } from "@/core/billing/entitlements";
+import { ProfileMenu } from "@/web/components/ProfileMenu";
 
 // Google Analytics 4 measurement ID. Public by design — appears in
 // the rendered HTML on every visit. Wired to fire in Consent Mode v2
@@ -469,17 +470,24 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                       </Link>
                     )}
                     {/*
-                      Signed-in users no longer need a separate "Dashboard"
-                      button in the header — the logo already redirects
-                      them there, and the user pill inside the dashboard
-                      opens their profile. Keeping the header lean.
+                      My Profile button is now a dropdown menu — click to
+                      reveal name, email, Settings, Subscription, API, and
+                      Sign out. Client component so it can own the open
+                      state + supabaseBrowser().auth.signOut().
                     */}
-                    <Link
-                      href="/account?tab=profile"
-                      className="rounded-full bg-gradient-ig text-white px-4 py-1.5 font-semibold hover:brightness-110 transition shadow-md shadow-primary/20"
-                    >
-                      My Profile
-                    </Link>
+                    <ProfileMenu
+                      name={
+                        (currentUser?.user_metadata?.full_name as string | undefined) ??
+                        (currentUser?.user_metadata?.name as string | undefined) ??
+                        null
+                      }
+                      email={currentUser?.email ?? ""}
+                      avatarUrl={
+                        (currentUser?.user_metadata?.avatar_url as string | undefined) ??
+                        (currentUser?.user_metadata?.picture as string | undefined) ??
+                        null
+                      }
+                    />
                   </>
                 )}
                 <ThemeToggle />
