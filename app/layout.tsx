@@ -10,6 +10,8 @@ import { CookieBanner, CookiePreferencesLink } from "@/web/components/CookieBann
 import { GAPageview } from "@/web/components/GAPageview";
 import { getCurrentUser } from "@/web/lib/supabase-server";
 import { CartProvider } from "@/web/components/services/CartContext";
+import { supabaseService } from "@/core/database/supabase";
+import { getSubscriptionCountdown } from "@/core/billing/entitlements";
 
 // Google Analytics 4 measurement ID. Public by design — appears in
 // the rendered HTML on every visit. Wired to fire in Consent Mode v2
@@ -347,6 +349,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const currentUser = await getCurrentUser().catch(() => null);
   const isSignedIn = !!currentUser;
   const logoHref = isSignedIn ? "/account" : "/";
+  // Subscription countdown for the header chip. Null when the user has no
+  // active sub — the chip stays hidden rather than showing a fake "0 days
+  // left" for free-tier users. Any DB error → null; we never block the
+  // whole page render on it.
+  const countdown = isSignedIn
+    ? await getSubscriptionCountdown(supabaseService(), currentUser!.id).catch(() => null)
+    : null;
   return (
     <html lang="en">
       <head>
@@ -436,22 +445,42 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     </Link>
                   </>
                 ) : (
-                  /*
-                    Signed-in users no longer need a separate "Dashboard"
-                    button in the header — the logo already redirects
-                    them there, and the user pill inside the dashboard
-                    opens their profile. Keeping the header lean.
-                    "My Profile" is one click via the pill on any
-                    /account page. Outside /account (e.g. on marketing
-                    pages), we surface it here so the profile is never
-                    more than one click away.
-                  */
-                  <Link
-                    href="/account?tab=profile"
-                    className="rounded-full bg-gradient-ig text-white px-4 py-1.5 font-semibold hover:brightness-110 transition shadow-md shadow-primary/20"
-                  >
-                    My Profile
-                  </Link>
+                  <>
+                    {/*
+                      Days-left chip. Only rendered when the user has an
+                      active subscription with time remaining — free-tier
+                      users see nothing here (a "0 days left" chip would
+                      read as broken). Amber ≤7d, gradient ≤30d, neutral
+                      otherwise. Clicks through to /pricing so the user
+                      can renew in one tap.
+                    */}
+                    {countdown && countdown.daysLeft > 0 && (
+                      <Link
+                        href="/pricing"
+                        title={`${countdown.plan} plan renews ${new Date(countdown.endsAt).toLocaleDateString()}`}
+                        className={
+                          "hidden sm:inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold transition-colors " +
+                          (countdown.daysLeft <= 7
+                            ? "bg-amber-500/10 text-amber-700 border border-amber-500/30 hover:bg-amber-500/20"
+                            : "bg-muted/60 text-foreground/80 border border-border hover:bg-muted")
+                        }
+                      >
+                        {countdown.daysLeft} {countdown.daysLeft === 1 ? "day" : "days"} left
+                      </Link>
+                    )}
+                    {/*
+                      Signed-in users no longer need a separate "Dashboard"
+                      button in the header — the logo already redirects
+                      them there, and the user pill inside the dashboard
+                      opens their profile. Keeping the header lean.
+                    */}
+                    <Link
+                      href="/account?tab=profile"
+                      className="rounded-full bg-gradient-ig text-white px-4 py-1.5 font-semibold hover:brightness-110 transition shadow-md shadow-primary/20"
+                    >
+                      My Profile
+                    </Link>
+                  </>
                 )}
                 <ThemeToggle />
               </nav>

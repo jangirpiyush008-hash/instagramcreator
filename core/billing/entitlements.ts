@@ -74,3 +74,32 @@ export async function hasActiveSubscription(
     .limit(1);
   return !!(data && data.length > 0);
 }
+
+// Returns the countdown data the header chip needs: how many days remain on
+// the user's current billing period, plus the tier label. Null when the user
+// has no active sub — the chip is hidden in that case (no fake "0 days left"
+// visual for free users).
+export async function getSubscriptionCountdown(
+  supabaseService: SupabaseClient,
+  userId: string | null,
+): Promise<{ daysLeft: number; plan: string; endsAt: string } | null> {
+  if (!userId) return null;
+  try {
+    const { data } = await supabaseService
+      .from("subscriptions")
+      .select("plan, current_period_end")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .gt("current_period_end", new Date().toISOString())
+      .order("current_period_end", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!data?.current_period_end) return null;
+    const ms = new Date(data.current_period_end).getTime() - Date.now();
+    const daysLeft = Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
+    return { daysLeft, plan: data.plan ?? "active", endsAt: data.current_period_end };
+  } catch (e) {
+    console.warn("[entitlements] countdown lookup failed:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
