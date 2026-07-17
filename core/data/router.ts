@@ -10,6 +10,7 @@ import { CachedAdapter } from "./cached-adapter";
 import { ChainAdapter, type NamedAdapter } from "./chain";
 import { EnsembleDataInstagramAdapter } from "./ensembledata-instagram";
 import { EnsembleDataTikTokAdapter } from "./ensembledata-tiktok";
+import { ApifyInstagramAdapter } from "./apify-instagram";
 import { supabaseService } from "@/core/database/supabase";
 
 // Provider fallback chain per platform.
@@ -19,7 +20,8 @@ import { supabaseService } from "@/core/database/supabase";
 //   2. HikerAPI         (HIKER_API_KEY)          — richer data, $50 min top-up
 //   3. RapidAPI/RockSolid (RAPIDAPI_KEY)         — fixed-monthly baseline
 //   4. RapidAPI fallback host (IG_RAPIDAPI_HOST_FALLBACK) — diversity within RapidAPI
-//   5. MockProvider — final safety net so users never see raw errors
+//   5. Apify            (APIFY_TOKEN)             — slow (10-60s) actor runs, insurance
+//   6. MockProvider — final safety net so users never see raw errors
 //
 // TikTok order:
 //   1. tikwm direct       (TIKWM_API_KEY)
@@ -77,6 +79,11 @@ function baseAdapterFor(platform: Platform): DataAdapter {
           adapter: new RapidAPIInstagramAdapter(undefined, fallbackHost),
         });
       }
+    }
+    // Apify sits last (before Mock) — slow, but a real data source
+    // when everything else is dry.
+    if (hasEnv("APIFY_TOKEN")) {
+      chain.push({ name: "apify", adapter: new ApifyInstagramAdapter() });
     }
   }
 
