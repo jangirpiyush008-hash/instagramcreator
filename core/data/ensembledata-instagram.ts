@@ -159,13 +159,24 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
     if (!this.token) {
       throw new DataSourceError("ENSEMBLEDATA_TOKEN is not configured");
     }
-    const qs = new URLSearchParams({ ...params, token: this.token }).toString();
+    // Trim / strip quotes in case the Railway env var was pasted with
+    // accidental wrapping quotes or trailing whitespace — a common
+    // source of "why is this failing at 30ms" fast-fails.
+    const cleanToken = this.token.trim().replace(/^["']|["']$/g, "");
+    const qs = new URLSearchParams({ ...params, token: cleanToken }).toString();
     const url = `${BASE}${path}?${qs}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
       const res = await fetch(url, {
-        headers: { accept: "application/json" },
+        headers: {
+          accept: "application/json",
+          // Ensembledata (and the IG endpoints it proxies) will often
+          // reject requests with Node's default undici UA. Present as
+          // a plain browser to match the working direct-URL test.
+          "user-agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        },
         signal: controller.signal,
         cache: "no-store",
       });
@@ -177,23 +188,19 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
       if (res.status === 429) {
         throw new ProviderRateLimitError("ensembledata", path);
       }
-      // 404 from Ensembledata is ambiguous — it can mean "endpoint
-      // path wrong / auth wrong / user genuinely missing." Because
-      // we can't distinguish, treat as a provider-side failure so
-      // the chain falls through to Hiker/RapidAPI (which CAN
-      // authoritatively answer "does this user exist"). Genuine
-      // "user not found" is detected downstream via empty payload,
-      // and only thrown as HandleNotFoundError after all providers
-      // have been consulted.
-      if (res.status === 404) {
-        throw new DataSourceError(
-          `ensembledata GET ${path} returned 404 — probably a broken endpoint path or auth issue, falling through`,
-        );
-      }
+      // For any non-2xx status, include the ACTUAL response body in
+      // the error message so /admin/providers shows what Ensembledata
+      // said. Also emit a full console log so Railway logs capture
+      // everything even after the truncated admin-panel view.
       if (!res.ok) {
-        const body = await res.text().catch(() => "");
+        const body = await res.text().catch(() => "<unreadable>");
+        const tokenPrefix = cleanToken.slice(0, 4);
+        const tokenLen = cleanToken.length;
+        console.error(
+          `[chain] ensembledata GET ${path} → ${res.status} (token: ${tokenPrefix}…${tokenLen}chars) body: ${body.slice(0, 500)}`,
+        );
         throw new DataSourceError(
-          `ensembledata GET ${path} returned ${res.status}: ${body.slice(0, 200)}`,
+          `ensembledata GET ${path} → ${res.status}: ${body.slice(0, 150)}`,
         );
       }
       const json = (await res.json()) as { data?: unknown; units_charged?: number };
