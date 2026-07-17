@@ -13,6 +13,7 @@ import type {
   UnfollowerDelta,
 } from "./adapter";
 import type { Platform } from "../types";
+import { DataUnavailableError } from "../utils/errors";
 
 // Deterministic per-handle data so dev demos look real before a paid provider
 // is wired. Swap with a real provider in core/data/router.ts — the tools never
@@ -40,19 +41,6 @@ function pick<T>(arr: readonly T[], rng: () => number): T {
 }
 
 const NICHES = ["Tech / creator", "Lifestyle", "Fitness", "Fashion", "Food", "Travel", "Comedy", "Gaming"];
-const COUNTRIES = ["India", "United States", "United Kingdom", "Brazil", "Indonesia", "Germany"];
-const CITIES_BY_COUNTRY: Record<string, string[]> = {
-  India: ["Mumbai", "Bengaluru", "Delhi", "Hyderabad"],
-  "United States": ["Los Angeles", "New York", "Austin", "Chicago"],
-  "United Kingdom": ["London", "Manchester"],
-  Brazil: ["São Paulo", "Rio de Janeiro"],
-  Indonesia: ["Jakarta", "Surabaya"],
-  Germany: ["Berlin", "Munich"],
-};
-const SUSPICIOUS_USERNAMES = [
-  "user_847291", "marketinghack_pro", "buy.likes.now", "raj_8847_x",
-  "follow4followx", "growth_hack_22", "promo_yes",
-];
 const SAMPLE_COMMENTS = [
   "Done! Tagged my BFF 🤞 fingers crossed",
   "Following + sharing on my story now",
@@ -119,41 +107,18 @@ export class MockProvider implements DataAdapter {
     });
   }
 
-  async isHandleAvailable(platform: Platform, handle: string): Promise<UsernameAvailability> {
-    const { rng, profile } = makeSeeds(handle, platform);
-    const available = rng() > 0.65;
-    if (available) {
-      return { platform, available: true };
-    }
-    return {
-      platform,
-      available: false,
-      takenBy: {
-        followers: profile.followers,
-        lastActiveAgo: pick(["2d ago", "5d ago", "3w ago", "1y ago", "yesterday"], rng),
-      },
-    };
+  async isHandleAvailable(_platform: Platform, _handle: string): Promise<UsernameAvailability> {
+    // No mock fabrication — the availability tool would rather report
+    // "unknown" than a made-up 458k follower count. Any real provider
+    // that fails should let this bubble; ChainAdapter converts it into
+    // a null availability state per platform.
+    throw new DataUnavailableError("isHandleAvailable");
   }
 
-  async getHashtagStatus(platform: Platform, hashtag: string): Promise<HashtagStatus> {
-    const rng = seeded(hash(`${platform}:tag:${hashtag}`));
-    const roll = rng();
-    const status: HashtagStatus["status"] = roll < 0.6 ? "ok" : roll < 0.9 ? "warn" : "bad";
-    const drop = status === "ok" ? 0 : status === "warn" ? -(20 + Math.floor(rng() * 50)) : -(60 + Math.floor(rng() * 30));
-    return {
-      hashtag,
-      status,
-      postsCount24h: Math.floor(1_000 + rng() * 80_000),
-      reachDropPct: drop,
-      reachTrend: Array.from({ length: 12 }, (_, i) => 100 + drop * (i / 12) + (rng() - 0.5) * 6),
-      firstFlaggedAt: status === "ok" ? undefined : "Mar 2026",
-      searchVisibility: status === "bad" ? "hidden" : "visible",
-      alternatives: [
-        `${hashtag}official`,
-        `the${hashtag}`,
-        `${hashtag}2026`,
-      ],
-    };
+  async getHashtagStatus(_platform: Platform, _hashtag: string): Promise<HashtagStatus> {
+    // The banned-hashtag tool uses its own curated dictionary + structural
+    // checks. This adapter method has no real backing anywhere.
+    throw new DataUnavailableError("getHashtagStatus");
   }
 
   async getThumbnail(platform: Platform, handle: string) {
@@ -191,31 +156,17 @@ export class MockProvider implements DataAdapter {
     };
   }
 
-  async getLiveCount(platform: Platform, handle: string): Promise<LiveCount> {
-    const { rng, profile } = makeSeeds(handle, platform);
-    const perHour = Math.max(10, Math.floor(profile.followers * (0.0003 + rng() * 0.0008)));
-    const history = Array.from({ length: 12 }, (_, i) => profile.followers - (12 - i) * Math.floor(perHour / 12));
-    return {
-      current: profile.followers,
-      perHour,
-      perDayProjection: perHour * 24,
-      history,
-    };
+  async getLiveCount(_platform: Platform, _handle: string): Promise<LiveCount> {
+    // Live-counter tool computes from real Supabase follower_snapshots.
+    // No adapter-level mock — that would defeat the entire feature.
+    throw new DataUnavailableError("getLiveCount");
   }
 
-  async getReachSignals(platform: Platform, handle: string): Promise<ReachSignals> {
-    const { rng } = makeSeeds(handle, platform);
-    const states: ReachSignals["hashtagSearch"][] = ["ok", "warn", "bad"];
-    const pickState = () => states[Math.floor(rng() * 3)]!;
-    const trend = Array.from({ length: 12 }, (_, i) => Math.max(20, 100 - (rng() * 70 * i) / 11));
-    return {
-      hashtagSearch: pickState(),
-      exploreReach: pickState(),
-      reelsDistribution: pickState(),
-      storyReplies: pickState(),
-      reachTrend: trend,
-      estimatedRecoveryDays: 7 + Math.floor(rng() * 10),
-    };
+  async getReachSignals(_platform: Platform, _handle: string): Promise<ReachSignals> {
+    // Shadowban-checker tool computes from real post metrics
+    // (viewsPerFollower, likesPerFollower, recent-vs-older reach medians).
+    // No adapter-level backing.
+    throw new DataUnavailableError("getReachSignals");
   }
 
   async getRecentComments(platform: Platform, handle: string, n: number) {
@@ -237,22 +188,12 @@ export class MockProvider implements DataAdapter {
     };
   }
 
-  async getDemographics(platform: Platform, handle: string): Promise<DemographicSplit> {
-    const { rng } = makeSeeds(handle, platform);
-    const female = 35 + Math.floor(rng() * 35);
-    const other = 2 + Math.floor(rng() * 6);
-    const male = Math.max(0, 100 - female - other);
-    const country = pick(COUNTRIES, rng);
-    const city = pick(CITIES_BY_COUNTRY[country] ?? ["—"], rng);
-    return {
-      malePct: male,
-      femalePct: female,
-      otherPct: other,
-      topAgeRange: pick(["18–24", "25–34", "35–44"], rng),
-      topCountry: country,
-      topCity: city,
-      sampleSize: 3000,
-    };
+  async getDemographics(_platform: Platform, _handle: string): Promise<DemographicSplit> {
+    // Gender-split tool computes from real audience enrichment
+    // (bio/face/name inference on real commenters). Fabricating a split
+    // here would ship the exact fake numbers the tool is designed to
+    // replace with honest ones.
+    throw new DataUnavailableError("getDemographics");
   }
 
   async getFollowerSample(_platform: Platform, _handle: string, _n: number): Promise<import("./adapter").FollowerLite[]> {
@@ -263,53 +204,16 @@ export class MockProvider implements DataAdapter {
     return [];
   }
 
-  async getFollowerAudit(platform: Platform, handle: string, sample: number): Promise<FollowerAudit> {
-    const { rng } = makeSeeds(handle, platform);
-    const botPct = 4 + Math.floor(rng() * 18);
-    const inactivePct = 10 + Math.floor(rng() * 18);
-    const realPct = Math.max(0, 100 - botPct - inactivePct);
-    const flaggedCount = 3 + Math.floor(rng() * 4);
-    return {
-      realPct,
-      inactivePct,
-      botPct,
-      sampleSize: Math.min(Math.max(sample, 500), 5_000),
-      flagged: Array.from({ length: flaggedCount }, (_, i) => ({
-        username: SUSPICIOUS_USERNAMES[i % SUSPICIOUS_USERNAMES.length]!,
-        note: pick(
-          [
-            "0 posts · default avatar · 12 followers",
-            "Mass-follow pattern · spam comments",
-            "Bio link to follower service",
-            "Inactive 14 months",
-            "Generated handle · no recent activity",
-          ],
-          rng,
-        ),
-      })),
-    };
+  async getFollowerAudit(_platform: Platform, _handle: string, _sample: number): Promise<FollowerAudit> {
+    // Fake-follower tool builds its quality score from real public
+    // engagement + follow ratios + audience-profile completeness.
+    // No adapter-level backing.
+    throw new DataUnavailableError("getFollowerAudit");
   }
 
-  async getUnfollowerDelta(platform: Platform, handle: string): Promise<UnfollowerDelta> {
-    const { rng, profile } = makeSeeds(handle, platform);
-    const lost = 200 + Math.floor(rng() * 800);
-    const gained = lost + Math.floor(rng() * 600);
-    const history = Array.from({ length: 12 }, (_, i) =>
-      profile.followers - Math.floor((12 - i) * (gained - lost) / 12),
-    );
-    return {
-      net7d: gained - lost,
-      gained7d: gained,
-      lost7d: lost,
-      trackedSince: "Mar 4",
-      followerHistory: history,
-      recentUnfollowers: SAMPLE_USERNAMES.slice(0, 5).map((u, i) => ({
-        username: u,
-        lostAt: pick(["2 hours ago", "Yesterday", "2 days ago", "3 days ago", "4 days ago"], rng),
-        followers: 500 + Math.floor(rng() * 30_000),
-      })),
-      ghostFollowers: Math.floor(profile.followers * 0.012),
-      mutualLost: 30 + Math.floor(rng() * 30),
-    };
+  async getUnfollowerDelta(_platform: Platform, _handle: string): Promise<UnfollowerDelta> {
+    // Unfollower-tracker tool reads real Supabase follower_snapshots
+    // and computes 7d/30d windowed deltas. No adapter-level backing.
+    throw new DataUnavailableError("getUnfollowerDelta");
   }
 }

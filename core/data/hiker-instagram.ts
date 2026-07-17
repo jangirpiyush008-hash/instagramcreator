@@ -23,7 +23,7 @@
 import type { Platform } from "../types";
 import type { Profile, Post, UsernameAvailability, CommentItem, FollowerLite } from "./adapter";
 import { MockProvider } from "./mock-provider";
-import { DataSourceError, HandleNotFoundError, PrivateAccountError, ProviderRateLimitError } from "../utils/errors";
+import { DataSourceError, DataUnavailableError, HandleNotFoundError, PrivateAccountError, ProviderRateLimitError } from "../utils/errors";
 
 // ------- CONFIRMED: /v2/user/by/username --------------------------------------
 
@@ -157,6 +157,7 @@ export class HikerInstagramAdapter extends MockProvider {
       if (e instanceof PrivateAccountError) throw e;
       if (e instanceof HandleNotFoundError) throw e;
       if (e instanceof ProviderRateLimitError) throw e;
+      if (e instanceof DataUnavailableError) throw e;
       console.warn(
         `[hiker-instagram] ${label} failed, falling back to mock:`,
         e instanceof Error ? e.message : e,

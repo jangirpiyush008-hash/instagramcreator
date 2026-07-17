@@ -8,8 +8,10 @@ import type { UsernameAvailability } from "../../data/adapter";
 // instead of blowing up the whole scan:
 //   - HandleNotFoundError  → handle is free
 //   - PrivateAccountError  → handle is taken (private account still counts)
-//   - anything else        → mark that platform as "unknown" but keep the
-//                            other platforms visible
+//   - anything else        → mark that platform as "unknown" (available: null)
+//                            so the UI shows an honest gray "couldn't verify"
+//                            state instead of a fake "Taken" with fabricated
+//                            follower count. The other platforms stay visible.
 async function checkOne(platform: Platform, handle: string): Promise<
   UsernameAvailability & { error?: string; isPrivate?: boolean }
 > {
@@ -24,7 +26,7 @@ async function checkOne(platform: Platform, handle: string): Promise<
     }
     return {
       platform,
-      available: false,
+      available: null,
       error: e instanceof Error ? e.message : "check failed",
     };
   }

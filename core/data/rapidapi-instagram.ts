@@ -12,7 +12,7 @@
 import type { Platform } from "../types";
 import type { Profile, Post, UsernameAvailability, CommentItem, FollowerLite } from "./adapter";
 import { MockProvider } from "./mock-provider";
-import { DataSourceError, HandleNotFoundError, PrivateAccountError, ProviderRateLimitError } from "../utils/errors";
+import { DataSourceError, DataUnavailableError, HandleNotFoundError, PrivateAccountError, ProviderRateLimitError } from "../utils/errors";
 
 interface ProviderEnvelope {
   // RockSolid endpoints wrap payloads inconsistently:
@@ -171,6 +171,9 @@ export class RapidAPIInstagramAdapter extends MockProvider {
       if (e instanceof PrivateAccountError) throw e;
       if (e instanceof HandleNotFoundError) throw e;
       if (e instanceof ProviderRateLimitError) throw e;
+      // DataUnavailableError means no real signal exists — do not paper
+      // over with mock. Let ChainAdapter move on to the next provider.
+      if (e instanceof DataUnavailableError) throw e;
       console.warn(
         `[rapidapi-ig-stable] ${label} failed, falling back to mock:`,
         e instanceof Error ? e.message : e,
@@ -307,24 +310,26 @@ export class RapidAPIInstagramAdapter extends MockProvider {
   }
 
   override async isHandleAvailable(platform: Platform, handle: string): Promise<UsernameAvailability> {
-    return this.safe<UsernameAvailability>(
-      "isHandleAvailable",
-      async () => {
-        // If getProfile returns a real follower count → handle is taken.
-        // Provider 404 / "User not found" → handle is free.
-        try {
-          const profile = await this.getProfile(platform, handle);
-          return {
-            platform,
-            available: false,
-            takenBy: { followers: profile.followers, lastActiveAgo: "recently" },
-          };
-        } catch {
-          return { platform, available: true };
-        }
-      },
-      () => super.isHandleAvailable(platform, handle),
-    );
+    // If getProfile succeeds, the handle is taken — surface the real
+    // follower count. If it explicitly 404s (HandleNotFoundError), the
+    // handle is free. Every other error (rate-limit, private, network,
+    // parse) must bubble so ChainAdapter tries the next provider.
+    // Previous "catch { return available: true }" caused rate-limits to
+    // be misreported as "handle available", and the mock fallback
+    // fabricated a fake 458k follower count for taken accounts.
+    try {
+      const profile = await this.getProfile(platform, handle);
+      return {
+        platform,
+        available: false,
+        takenBy: { followers: profile.followers, lastActiveAgo: "recently" },
+      };
+    } catch (e) {
+      if (e instanceof HandleNotFoundError) {
+        return { platform, available: true };
+      }
+      throw e;
+    }
   }
 
   override async getThumbnail(platform: Platform, handle: string) {

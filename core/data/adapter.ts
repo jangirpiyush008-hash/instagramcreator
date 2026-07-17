@@ -89,7 +89,10 @@ export interface FollowerAudit {
 
 export interface UsernameAvailability {
   platform: Platform;
-  available: boolean;
+  // null = signal unavailable (provider errored, rate-limited, or has no
+  // handle-availability endpoint). UI must render an "unknown" state
+  // instead of guessing — a fake "Taken" is worse than an honest "Unknown".
+  available: boolean | null;
   takenBy?: {
     followers: number;
     lastActiveAgo: string;       // human label e.g. "2d ago"

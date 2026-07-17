@@ -16,6 +16,7 @@ import type {
   UsernameAvailability,
 } from "./adapter";
 import {
+  DataUnavailableError,
   HandleNotFoundError,
   PrivateAccountError,
   ProviderRateLimitError,
@@ -90,7 +91,12 @@ export class ChainAdapter implements DataAdapter {
           throw e;
         }
         const latencyMs = Date.now() - startedAt;
-        recordFailure(name, method, platform, latencyMs, e);
+        // DataUnavailableError means "this provider doesn't implement this
+        // method" — not a failure, just a capability signal. Don't count
+        // it against the circuit breaker; skip to the next provider silently.
+        if (!(e instanceof DataUnavailableError)) {
+          recordFailure(name, method, platform, latencyMs, e);
+        }
         lastErr = e;
         // Continue to the next adapter.
       }

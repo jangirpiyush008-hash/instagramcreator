@@ -53,3 +53,17 @@ export class PaymentError extends Error {
     this.name = "PaymentError";
   }
 }
+
+// Thrown when a DataAdapter method has no real implementation for the
+// requested platform/handle. Distinct from DataSourceError (transient
+// failure) — this is a permanent "no signal available" state. Chain
+// treats it as a normal failure (falls through to next provider); if
+// every provider throws it, the terminal MockProvider throws it too,
+// and tools convert it into an honest "unavailable" UI state instead of
+// fabricating a number.
+export class DataUnavailableError extends Error {
+  constructor(public readonly method: string, public readonly reason = "no real data source for this signal") {
+    super(`${method}: ${reason}`);
+    this.name = "DataUnavailableError";
+  }
+}

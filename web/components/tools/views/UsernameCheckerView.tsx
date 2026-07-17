@@ -6,8 +6,10 @@ import type { Platform } from "@/core/types";
 interface PlatformDetail {
   platform: Platform;
   label?: string;
-  available: boolean;
+  available: boolean | null;   // null = couldn't verify (provider errored/down)
   takenBy?: { followers: number; lastActiveAgo: string };
+  isPrivate?: boolean;
+  error?: string;
 }
 
 interface Props {
@@ -34,40 +36,51 @@ export function UsernameCheckerView({ handle, entitled, data }: Props) {
     <div className="space-y-6">
       <SectionTitle hint={`across ${rows.length} platforms`}>Availability for @{handle}</SectionTitle>
       <div className="grid sm:grid-cols-2 gap-3">
-        {rows.map((r) => (
-          <div key={r.label ?? r.platform} className="rounded-xl border border-border bg-card/60 p-5">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-medium">{r.label ?? r.platform}</div>
-              {r.available ? (
-                <StatusBadge status="ok" label="Available" />
-              ) : (
-                <StatusBadge status="bad" label="Taken" />
+        {rows.map((r) => {
+          const state: "available" | "taken" | "unknown" =
+            r.available === true ? "available" : r.available === false ? "taken" : "unknown";
+          return (
+            <div key={r.label ?? r.platform} className="rounded-xl border border-border bg-card/60 p-5">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium">{r.label ?? r.platform}</div>
+                {state === "available" && <StatusBadge status="ok" label="Available" />}
+                {state === "taken" && <StatusBadge status="bad" label="Taken" />}
+                {state === "unknown" && <StatusBadge status="warn" label="Unknown" />}
+              </div>
+              {state === "available" && (
+                <div className="mt-4">
+                  <div className="text-2xl font-semibold text-emerald-300">@{handle}</div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Free to grab — go register before someone else does.
+                  </p>
+                </div>
+              )}
+              {state === "taken" && (
+                <div className="mt-4 space-y-3">
+                  <LockedMetric
+                    label="Followers on taken account"
+                    value={r.takenBy?.followers?.toLocaleString() ?? "—"}
+                    entitled={entitled}
+                  />
+                  <LockedMetric
+                    label="Last active"
+                    value={r.takenBy?.lastActiveAgo ?? "—"}
+                    entitled={entitled}
+                    accent="amber"
+                  />
+                </div>
+              )}
+              {state === "unknown" && (
+                <div className="mt-4">
+                  <p className="text-sm text-muted-foreground">
+                    Couldn&apos;t verify right now — the provider didn&apos;t respond.
+                    Try again in a minute.
+                  </p>
+                </div>
               )}
             </div>
-            {r.available ? (
-              <div className="mt-4">
-                <div className="text-2xl font-semibold text-emerald-300">@{handle}</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Free to grab — go register before someone else does.
-                </p>
-              </div>
-            ) : (
-              <div className="mt-4 space-y-3">
-                <LockedMetric
-                  label="Followers on taken account"
-                  value={r.takenBy?.followers?.toLocaleString() ?? "—"}
-                  entitled={entitled}
-                />
-                <LockedMetric
-                  label="Last active"
-                  value={r.takenBy?.lastActiveAgo ?? "—"}
-                  entitled={entitled}
-                  accent="amber"
-                />
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <section className="rounded-xl border border-border bg-card/40 p-5">
