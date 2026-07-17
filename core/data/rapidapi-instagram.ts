@@ -69,6 +69,22 @@ interface IgPostRaw {
   thumbnail_src?: string;
   display_url?: string;
   image_versions2?: { candidates?: { url?: string; width?: number; height?: number }[] };
+  // Some RapidAPI IG providers expose the cover on `thumbnail_url` (older
+  // scrape shape) or nested under `image_url` / `cover_url`. Tried as
+  // fallbacks so posts don't render as gradient placeholders when the
+  // provider ships a non-standard field name.
+  thumbnail_url?: string;
+  image_url?: string;
+  cover_url?: string;
+  // Carousel (multi-image) posts hide the cover inside the FIRST child.
+  // Without this fallback every sidecar post renders as a gradient.
+  carousel_media?: Array<{
+    image_versions2?: { candidates?: { url?: string; width?: number }[] };
+    display_url?: string;
+    thumbnail_src?: string;
+  }>;
+  // Older /reels/ shape wraps the image under `image_versions.items`.
+  image_versions?: { items?: { url?: string; width?: number }[] };
   caption?: { text?: string } | null;
   edge_media_to_caption?: { edges?: { node?: { text?: string } }[] };
   video_duration?: number;
@@ -78,6 +94,8 @@ interface IgPostRaw {
   // Video URL fields — RockSolid can return any of these depending on post type.
   video_url?: string;
   video_versions?: { url?: string; type?: number; width?: number; height?: number }[];
+  // Reel-specific: some providers put the reel thumbnail under `image_versions2.items` or `thumbnail`.
+  thumbnail?: string;
   // RockSolid nests the author under user with is_private / is_verified
   user?: { username?: string; is_private?: boolean; is_verified?: boolean };
 }
@@ -268,16 +286,54 @@ export class RapidAPIInstagramAdapter extends MockProvider {
         return raw.slice(0, n).map<Post>((p) => {
           // RockSolid: pk = numeric id, code = shortcode (for building /p/{code}/ urls)
           const shortcode = String(p.code ?? p.shortcode ?? p.pk ?? p.id ?? Math.random().toString(36).slice(2));
-          // Pick highest-resolution thumbnail from image_versions2 candidates
-          // (candidates are typically sorted largest→smallest, but sort defensively).
+          // Try every thumbnail source we've seen from RapidAPI IG providers.
+          // The order matters: highest-res candidates first, then top-level
+          // display_url/thumbnail_src, then carousel-child cover, then
+          // fallback aliases. Whichever hits first wins — the rest of the
+          // list is defensive coverage for shape drift between providers.
           const candidates = p.image_versions2?.candidates ?? [];
+          const carouselFirst = p.carousel_media?.[0];
+          const carouselCandidates =
+            carouselFirst?.image_versions2?.candidates ?? [];
           const largestThumb = candidates
             .slice()
             .sort((a, b) => (b.width ?? 0) - (a.width ?? 0))[0]?.url;
+          const largestCarouselThumb = carouselCandidates
+            .slice()
+            .sort((a, b) => (b.width ?? 0) - (a.width ?? 0))[0]?.url;
+          const olderShapeItems = p.image_versions?.items ?? [];
+          const olderShapeThumb = olderShapeItems
+            .slice()
+            .sort((a, b) => (b.width ?? 0) - (a.width ?? 0))[0]?.url;
+          const thumbSd =
+            p.thumbnail_src ??
+            p.display_url ??
+            p.thumbnail_url ??
+            p.image_url ??
+            p.cover_url ??
+            p.thumbnail ??
+            candidates[0]?.url ??
+            carouselFirst?.display_url ??
+            carouselFirst?.thumbnail_src ??
+            carouselCandidates[0]?.url ??
+            olderShapeItems[0]?.url;
+          const thumbHd =
+            largestThumb ??
+            largestCarouselThumb ??
+            olderShapeThumb ??
+            thumbSd;
           // Highest-bandwidth video variant from video_versions.
           const bestVideo = (p.video_versions ?? [])
             .slice()
             .sort((a, b) => (b.width ?? 0) - (a.width ?? 0))[0]?.url;
+          if (!thumbSd) {
+            // Diagnostic: log the field names present on this raw post so
+            // we can spot shape drift from a provider. Doesn't crash the
+            // scan; just leaves a breadcrumb for Railway logs.
+            console.warn(
+              `[rapidapi-ig-stable] no thumbnail extracted for ${handle}/${shortcode}. Raw keys: ${Object.keys(p).join(",")}`,
+            );
+          }
           return {
             id: shortcode,
             likes: p.like_count ?? p.edge_liked_by?.count ?? p.edge_media_preview_like?.count ?? 0,
@@ -288,11 +344,8 @@ export class RapidAPIInstagramAdapter extends MockProvider {
               : p.taken_at_timestamp
               ? new Date(p.taken_at_timestamp * 1000).toISOString()
               : new Date().toISOString(),
-            thumbnailUrl:
-              p.thumbnail_src ??
-              p.display_url ??
-              candidates[0]?.url,
-            thumbnailUrlHd: largestThumb ?? p.display_url ?? p.thumbnail_src,
+            thumbnailUrl: thumbSd,
+            thumbnailUrlHd: thumbHd,
             title:
               p.caption?.text?.slice(0, 80) ??
               p.edge_media_to_caption?.edges?.[0]?.node?.text?.slice(0, 80),
