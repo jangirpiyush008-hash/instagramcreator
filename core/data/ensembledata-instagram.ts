@@ -52,42 +52,49 @@ const TIMEOUT_MS = 12_000;
 // returns a single `data` object; user/posts + comments return
 // `data: { items?, nextCursor? }` OR `data: [...]` directly, depending
 // on the endpoint. We handle both shapes defensively.
+// EDUser is the /instagram/user/detailed-info response payload. Note
+// this is IG's GraphQL scraped web-profile shape, NOT the Instagram
+// Private API shape — everything is edge_X / node.count-style.
 interface EDUser {
+  id?: string;                 // numeric string, e.g. "28943446"
   username?: string;
   full_name?: string;
   biography?: string;
-  pk?: number | string;
-  id?: string;
-  follower_count?: number;
-  following_count?: number;
   is_verified?: boolean;
   is_private?: boolean;
-  media_count?: number;
   profile_pic_url?: string;
   profile_pic_url_hd?: string;
-  hd_profile_pic_url_info?: { url?: string };
   external_url?: string;
-  category?: string;
-  is_business?: boolean;
+  business_category_name?: string | null;
+  category_name?: string | null;
+  is_business_account?: boolean;
+  // Metric counts — all in edge_*.count.
+  edge_followed_by?: { count?: number };
+  edge_follow?: { count?: number };
+  edge_owner_to_timeline_media?: { count?: number; edges?: Array<{ node: EDMediaNode }> };
+  edge_felix_video_timeline?: { count?: number; edges?: Array<{ node: EDMediaNode }> };
 }
 
-interface EDMedia {
-  pk?: number | string;
+// EDMediaNode is what each post edge looks like in the GraphQL feed.
+// Fields we don't use (accessibility_caption, gating_info, etc.)
+// are omitted for brevity.
+interface EDMediaNode {
+  __typename?: string;         // "GraphVideo" | "GraphImage" | "GraphSidecar"
   id?: string;
-  code?: string;
-  media_type?: number;
-  like_count?: number;
-  comment_count?: number;
-  play_count?: number;
-  view_count?: number;
-  taken_at?: number;
-  caption?: { text?: string } | string;
-  caption_text?: string;
-  thumbnail_url?: string;
-  image_versions2?: { candidates?: { url?: string }[] };
+  shortcode?: string;
+  is_video?: boolean;
+  display_url?: string;        // full-res image / video cover
+  thumbnail_src?: string;
   video_url?: string;
-  video_versions?: { url?: string }[];
+  video_view_count?: number;
   video_duration?: number;
+  taken_at_timestamp?: number; // unix seconds
+  edge_liked_by?: { count?: number };
+  edge_media_preview_like?: { count?: number };
+  edge_media_to_comment?: { count?: number };
+  edge_media_to_caption?: { edges?: Array<{ node?: { text?: string } }> };
+  product_type?: string;       // "clips" | "igtv" | undefined
+  clips_music_attribution_info?: { song_name?: string };
 }
 
 interface EDComment {
@@ -106,9 +113,44 @@ interface EDComment {
 export class EnsembleDataInstagramAdapter extends MockProvider implements DataAdapter {
   private readonly token: string;
 
+  // Per-instance memo cache. /instagram/user/detailed-info returns
+  // the last ~12 posts inline, so caching the whole payload lets
+  // getProfile + getRecentPosts + getFollowerSample within one tool
+  // run share ONE call. CachedAdapter still handles the cross-request
+  // Supabase cache; this is purely intra-run dedup.
+  private readonly detailedInfoCache = new Map<string, { data: EDUser; cachedAt: number }>();
+  private static readonly CACHE_MS = 2 * 60 * 1000;
+
   constructor(token?: string) {
     super("instagram");
     this.token = token ?? process.env.ENSEMBLEDATA_TOKEN ?? "";
+  }
+
+  private async fetchDetailedInfo(clean: string): Promise<EDUser> {
+    const key = clean.toLowerCase();
+    const hit = this.detailedInfoCache.get(key);
+    if (hit && Date.now() - hit.cachedAt < EnsembleDataInstagramAdapter.CACHE_MS) {
+      return hit.data;
+    }
+    const raw = await this.get<{ user?: EDUser } | EDUser>(
+      "/instagram/user/detailed-info",
+      { username: clean },
+    );
+    const user: EDUser = "user" in (raw as { user?: EDUser })
+      ? (raw as { user: EDUser }).user
+      : (raw as EDUser);
+    if (!user || !user.username) {
+      throw new DataSourceError(
+        `ensembledata /instagram/user/detailed-info returned no user for ${clean} — falling through`,
+      );
+    }
+    if (user.username.toLowerCase() !== clean.toLowerCase()) {
+      throw new DataSourceError(
+        `ensembledata returned different user (${user.username}) than requested (${clean}) — falling through`,
+      );
+    }
+    this.detailedInfoCache.set(key, { data: user, cachedAt: Date.now() });
+    return user;
   }
 
   // Low-level HTTP wrapper. All errors normalized to our error taxonomy
@@ -178,52 +220,28 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
       throw new DataSourceError(`ensembledata-instagram doesn't serve ${platform}`);
     }
     const clean = handle.replace(/^@/, "").trim();
-    const raw = await this.get<{ user?: EDUser } | EDUser>("/instagram/user/detailed-info", {
-      username: clean,
-    });
-    // Endpoint sometimes returns { user: {...} }, sometimes { ...user }.
-    const user: EDUser = "user" in (raw as { user?: EDUser })
-      ? (raw as { user: EDUser }).user
-      : (raw as EDUser);
-    // Any "user missing" signal from Ensembledata is treated as
-    // provider-side failure (DataSourceError), not authoritative
-    // HandleNotFoundError. Reason: we don't yet know Ensembledata's
-    // exact endpoint contract for "user genuinely doesn't exist",
-    // so the safe move is to fall through to Hiker / RapidAPI which
-    // CAN authoritatively answer.
-    if (!user || !user.username) {
-      throw new DataSourceError(
-        `ensembledata /ig/user/info returned no user for ${clean} — falling through`,
-      );
-    }
-    // Reject provider fuzzy-match: if the returned username doesn't match
-    // what we asked for, also fall through.
-    if (user.username.toLowerCase() !== clean.toLowerCase()) {
-      throw new DataSourceError(
-        `ensembledata returned different user (${user.username}) than requested (${clean}) — falling through`,
-      );
-    }
+    const user = await this.fetchDetailedInfo(clean);
     if (user.is_private) {
       throw new PrivateAccountError(clean, "instagram");
     }
     return {
-      handle: user.username,
+      handle: user.username!,
       displayName: user.full_name ?? undefined,
-      followers: Number(user.follower_count ?? 0),
-      following: Number(user.following_count ?? 0),
+      followers: Number(user.edge_followed_by?.count ?? 0),
+      following: Number(user.edge_follow?.count ?? 0),
       verified: Boolean(user.is_verified),
       isPrivate: Boolean(user.is_private),
-      avatarUrl:
-        user.hd_profile_pic_url_info?.url ??
-        user.profile_pic_url_hd ??
-        user.profile_pic_url ??
-        undefined,
+      avatarUrl: user.profile_pic_url_hd ?? user.profile_pic_url ?? undefined,
       bio: user.biography ?? undefined,
-      niche: user.category ?? undefined,
+      niche: user.business_category_name ?? user.category_name ?? undefined,
     };
   }
 
   // ── getRecentPosts ────────────────────────────────────────────────────────
+  // detailed-info already returns the last ~12 posts inline via
+  // edge_owner_to_timeline_media.edges. Reuse the memo so we pay for
+  // one call, not two. If the caller asks for MORE than the inline
+  // count, top up with the /user/posts endpoint (same GraphQL shape).
   override async getRecentPosts(
     platform: Platform,
     handle: string,
@@ -231,12 +249,41 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
   ): Promise<Post[]> {
     if (platform !== "instagram") return [];
     const clean = handle.replace(/^@/, "").trim();
-    const raw = await this.get<{ items?: EDMedia[] } | EDMedia[]>(
-      "/instagram/user/posts",
-      { username: clean, depth: "1" },
-    );
-    const items = Array.isArray(raw) ? raw : (raw?.items ?? []);
-    return items.slice(0, n).map((m) => normalizeMedia(m));
+    const user = await this.fetchDetailedInfo(clean);
+    const inline: EDMediaNode[] = [];
+    for (const e of user.edge_owner_to_timeline_media?.edges ?? []) {
+      if (e?.node) inline.push(e.node);
+    }
+    if (inline.length >= n) {
+      return inline.slice(0, n).map(normalizeMediaNode);
+    }
+    // Fell short — top up with a dedicated /user/posts call. Same
+    // GraphQL wrapper is expected.
+    try {
+      const raw = await this.get<
+        { edges?: Array<{ node: EDMediaNode }> } | { items?: EDMediaNode[] } | EDMediaNode[]
+      >("/instagram/user/posts", { username: clean, depth: "1" });
+      const more: EDMediaNode[] = Array.isArray(raw)
+        ? raw
+        : "edges" in (raw as { edges?: unknown }) && Array.isArray((raw as { edges?: unknown[] }).edges)
+          ? ((raw as { edges: Array<{ node: EDMediaNode }> }).edges
+              .map((e) => e?.node)
+              .filter((v): v is EDMediaNode => Boolean(v)))
+          : ((raw as { items?: EDMediaNode[] }).items ?? []);
+      const seen = new Set(inline.map((p) => p.id ?? p.shortcode ?? ""));
+      for (const node of more) {
+        const key = node.id ?? node.shortcode ?? "";
+        if (!seen.has(key)) {
+          inline.push(node);
+          seen.add(key);
+        }
+      }
+    } catch {
+      // Non-fatal — chain will fall through to next provider if
+      // downstream really needs more posts and the primary returned
+      // fewer than requested.
+    }
+    return inline.slice(0, n).map(normalizeMediaNode);
   }
 
   // ── getRecentComments ─────────────────────────────────────────────────────
@@ -270,8 +317,9 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
   }
 
   // ── getFollowerSample ─────────────────────────────────────────────────────
-  // Ensembledata's followers endpoint requires a user_id (numeric pk),
-  // not a username. We resolve via a preliminary getProfile.info call.
+  // The followers endpoint needs a numeric user_id, which we already
+  // have from the cached detailed-info payload — reuse it, don't pay
+  // for a second lookup.
   override async getFollowerSample(
     platform: Platform,
     handle: string,
@@ -279,22 +327,16 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
   ): Promise<FollowerLite[]> {
     if (platform !== "instagram") return [];
     const clean = handle.replace(/^@/, "").trim();
-    const info = await this.get<{ user?: EDUser } | EDUser>("/instagram/user/detailed-info", {
-      username: clean,
-    });
-    const user: EDUser = "user" in (info as { user?: EDUser })
-      ? (info as { user: EDUser }).user
-      : (info as EDUser);
-    const userId = String(user?.pk ?? user?.id ?? "");
+    const user = await this.fetchDetailedInfo(clean);
+    const userId = user.id;
     if (!userId) {
       throw new DataSourceError(
-        `ensembledata could not resolve pk for ${clean} — falling through`,
+        `ensembledata could not resolve user id for ${clean} — falling through`,
       );
     }
-    const raw = await this.get<{ items?: Array<{ username?: string; full_name?: string }> } | Array<{ username?: string; full_name?: string }>>(
-      "/instagram/user/followers",
-      { user_id: userId },
-    );
+    const raw = await this.get<
+      { items?: Array<{ username?: string; full_name?: string }> } | Array<{ username?: string; full_name?: string }>
+    >("/instagram/user/followers", { user_id: userId });
     const items = Array.isArray(raw) ? raw : (raw?.items ?? []);
     return items.slice(0, n).map((f) => ({
       username: f.username ?? "",
@@ -383,30 +425,30 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
   }
 }
 
-function normalizeMedia(m: EDMedia): Post {
-  const caption =
-    typeof m.caption === "string"
-      ? m.caption
-      : (m.caption?.text ?? m.caption_text ?? undefined);
-  const thumb =
-    m.image_versions2?.candidates?.[0]?.url ??
-    m.thumbnail_url ??
-    undefined;
-  const thumbHd = m.image_versions2?.candidates?.[0]?.url ?? thumb;
-  const videoUrl = m.video_versions?.[0]?.url ?? m.video_url ?? undefined;
+// GraphQL post node → our Post shape. Handles Image / Video / Sidecar
+// (carousel) — sidecar's first-child image is what the feed thumbnail
+// shows, so display_url on the parent is correct for all three.
+function normalizeMediaNode(n: EDMediaNode): Post {
+  const caption = n.edge_media_to_caption?.edges?.[0]?.node?.text ?? undefined;
+  const likes = n.edge_liked_by?.count ?? n.edge_media_preview_like?.count ?? 0;
+  const comments = n.edge_media_to_comment?.count ?? 0;
+  const views = n.video_view_count ?? undefined;
+  const thumb = n.display_url ?? n.thumbnail_src ?? undefined;
   return {
-    id: String(m.pk ?? m.id ?? m.code ?? ""),
-    likes: Number(m.like_count ?? 0),
-    comments: Number(m.comment_count ?? 0),
-    views: m.play_count ?? m.view_count ?? undefined,
-    postedAt: m.taken_at
-      ? new Date(m.taken_at * 1000).toISOString()
+    id: String(n.id ?? n.shortcode ?? ""),
+    likes: Number(likes),
+    comments: Number(comments),
+    views,
+    postedAt: n.taken_at_timestamp
+      ? new Date(n.taken_at_timestamp * 1000).toISOString()
       : new Date().toISOString(),
     thumbnailUrl: thumb,
-    thumbnailUrlHd: thumbHd,
+    thumbnailUrlHd: thumb,
     caption,
-    durationSec: m.video_duration ?? undefined,
-    videoUrl,
-    permalink: m.code ? `https://www.instagram.com/p/${m.code}/` : undefined,
+    durationSec: n.video_duration ?? undefined,
+    videoUrl: n.video_url ?? undefined,
+    permalink: n.shortcode
+      ? `https://www.instagram.com/p/${n.shortcode}/`
+      : undefined,
   };
 }
