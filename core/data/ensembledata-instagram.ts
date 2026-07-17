@@ -1,26 +1,19 @@
-// Instagram data via EnsembleData (https://ensembledata.com).
+// Instagram data via the OFFICIAL EnsembleData Node SDK.
+// npm: https://www.npmjs.com/package/ensembledata
+// gh:  https://github.com/EnsembleData/ensembledata-node
 //
-// Why: pay-per-request (no monthly minimum), covers IG + TikTok + YouTube
-// from one endpoint namespace, and works out of the box with just a token.
-// Positioned as the CHEAPEST provider in the chain — tried first, falls
-// through to HikerAPI / RapidAPI on any failure.
+// Why the SDK instead of hand-rolled fetch: eliminates every possible
+// source of "why is this 30ms fast-failing" bugs — User-Agent, URL
+// construction, retries, token handling, all owned by EnsembleData's
+// own team and tested against their own servers. Our job here is just
+// to convert their response shape into our DataAdapter contract.
 //
-// Auth: single `token` query param on every request. Base URL is
-// https://ensembledata.com/apis/ig/*. Response is uniformly wrapped as
-// `{ data: <payload>, units_charged: N }` — we unwrap `data` before parsing.
-//
-// Endpoints wired here (CONFIRMED paths — the docs I first fetched
-// used /ig/* shorthand but the real HTTP endpoints under the SDK's
-// hood use /instagram/* full-word paths):
-//   GET  /apis/instagram/user/detailed-info  — profile with follower / bio (getProfile)
-//   GET  /apis/instagram/user/posts          — recent feed posts
-//   GET  /apis/instagram/user/followers      — follower sample
-//   GET  /apis/instagram/post/comments       — comments on a specific media
-//
-// Errors bubble up as HandleNotFoundError / PrivateAccountError /
-// ProviderRateLimitError / DataSourceError so the ChainAdapter can
-// fail over to the next provider without leaking mock data.
+// Response shape (verified against a real /instagram/user/detailed-info
+// call for @mkbhd): IG's GraphQL scraped web-profile format —
+// edge_followed_by.count / edge_owner_to_timeline_media.edges / etc.
+// This IS the same shape a browser's page-source scrape returns.
 
+import { EDClient, EDError } from "ensembledata";
 import type { Platform } from "../types";
 import type {
   CommentItem,
@@ -45,18 +38,9 @@ import {
   ProviderRateLimitError,
 } from "../utils/errors";
 
-const BASE = "https://ensembledata.com/apis";
-const TIMEOUT_MS = 12_000;
-
-// Ensembledata responses vary between endpoints. The user/info endpoint
-// returns a single `data` object; user/posts + comments return
-// `data: { items?, nextCursor? }` OR `data: [...]` directly, depending
-// on the endpoint. We handle both shapes defensively.
-// EDUser is the /instagram/user/detailed-info response payload. Note
-// this is IG's GraphQL scraped web-profile shape, NOT the Instagram
-// Private API shape — everything is edge_X / node.count-style.
+// GraphQL user shape returned by /instagram/user/detailed-info.
 interface EDUser {
-  id?: string;                 // numeric string, e.g. "28943446"
+  id?: string;
   username?: string;
   full_name?: string;
   biography?: string;
@@ -68,77 +52,117 @@ interface EDUser {
   business_category_name?: string | null;
   category_name?: string | null;
   is_business_account?: boolean;
-  // Metric counts — all in edge_*.count.
   edge_followed_by?: { count?: number };
   edge_follow?: { count?: number };
-  edge_owner_to_timeline_media?: { count?: number; edges?: Array<{ node: EDMediaNode }> };
-  edge_felix_video_timeline?: { count?: number; edges?: Array<{ node: EDMediaNode }> };
+  edge_owner_to_timeline_media?: {
+    count?: number;
+    edges?: Array<{ node: EDMediaNode }>;
+  };
+  edge_felix_video_timeline?: {
+    count?: number;
+    edges?: Array<{ node: EDMediaNode }>;
+  };
 }
 
-// EDMediaNode is what each post edge looks like in the GraphQL feed.
-// Fields we don't use (accessibility_caption, gating_info, etc.)
-// are omitted for brevity.
 interface EDMediaNode {
-  __typename?: string;         // "GraphVideo" | "GraphImage" | "GraphSidecar"
+  __typename?: string;
   id?: string;
   shortcode?: string;
   is_video?: boolean;
-  display_url?: string;        // full-res image / video cover
+  display_url?: string;
   thumbnail_src?: string;
   video_url?: string;
   video_view_count?: number;
   video_duration?: number;
-  taken_at_timestamp?: number; // unix seconds
+  taken_at_timestamp?: number;
   edge_liked_by?: { count?: number };
   edge_media_preview_like?: { count?: number };
   edge_media_to_comment?: { count?: number };
   edge_media_to_caption?: { edges?: Array<{ node?: { text?: string } }> };
-  product_type?: string;       // "clips" | "igtv" | undefined
-  clips_music_attribution_info?: { song_name?: string };
+  product_type?: string;
 }
 
-interface EDComment {
-  pk?: number | string;
-  id?: string;
+interface EDCommentNode {
+  id?: string | number;
+  pk?: string | number;
+  text?: string;
+  created_at?: number;
+  created_at_utc?: number;
+  owner?: {
+    username?: string;
+    full_name?: string;
+    profile_pic_url?: string;
+  };
   user?: {
     username?: string;
     full_name?: string;
     profile_pic_url?: string;
   };
-  text?: string;
-  created_at?: number;
-  created_at_utc?: number;
 }
 
-export class EnsembleDataInstagramAdapter extends MockProvider implements DataAdapter {
-  private readonly token: string;
+// Client-timeout gauge — kept a touch above HikerAPI's for the same
+// reason (12s upstream, +2s our headroom). SDK's own default is 60s
+// which is far too long for our chain.
+const SDK_TIMEOUT_SEC = 14;
 
-  // Per-instance memo cache. /instagram/user/detailed-info returns
-  // the last ~12 posts inline, so caching the whole payload lets
-  // getProfile + getRecentPosts + getFollowerSample within one tool
-  // run share ONE call. CachedAdapter still handles the cross-request
-  // Supabase cache; this is purely intra-run dedup.
+export class EnsembleDataInstagramAdapter extends MockProvider implements DataAdapter {
+  private readonly client: ReturnType<typeof EDClient> | null;
+
+  // Per-instance memo. /instagram/user/detailed-info returns the last
+  // ~12 posts inline, so within one tool run we share ONE call across
+  // getProfile + getRecentPosts + getFollowerSample.
   private readonly detailedInfoCache = new Map<string, { data: EDUser; cachedAt: number }>();
   private static readonly CACHE_MS = 2 * 60 * 1000;
 
   constructor(token?: string) {
     super("instagram");
-    this.token = token ?? process.env.ENSEMBLEDATA_TOKEN ?? "";
+    // Strip wrapping quotes / whitespace that Railway sometimes preserves.
+    const raw = (token ?? process.env.ENSEMBLEDATA_TOKEN ?? "").trim();
+    const clean = raw.replace(/^["']|["']$/g, "");
+    this.client = clean
+      ? EDClient({ token: clean, timeout: SDK_TIMEOUT_SEC })
+      : null;
+  }
+
+  // Convert every SDK error to our chain error taxonomy so the
+  // ChainAdapter can classify and route them the same as other
+  // providers.
+  private mapError(e: unknown, method: string): Error {
+    if (e instanceof EDError) {
+      const status = e.statusCode;
+      const detail = e.detail || "";
+      if (status === 402) return new ProviderRateLimitError("ensembledata", method);
+      if (status === 429) return new ProviderRateLimitError("ensembledata", method);
+      // Any 4xx/5xx becomes a DataSourceError with the ACTUAL detail
+      // Ensembledata returned, so /admin/providers shows the real reason.
+      return new DataSourceError(
+        `ensembledata ${method} → ${status}: ${detail.slice(0, 150)}`,
+      );
+    }
+    if (e instanceof Error && e.name === "AbortError") {
+      return new DataSourceError(`ensembledata ${method} timeout`);
+    }
+    return new DataSourceError(
+      `ensembledata ${method} error: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 
   private async fetchDetailedInfo(clean: string): Promise<EDUser> {
+    if (!this.client) {
+      throw new DataSourceError("ENSEMBLEDATA_TOKEN is not configured");
+    }
     const key = clean.toLowerCase();
     const hit = this.detailedInfoCache.get(key);
     if (hit && Date.now() - hit.cachedAt < EnsembleDataInstagramAdapter.CACHE_MS) {
       return hit.data;
     }
-    const raw = await this.get<{ user?: EDUser } | EDUser>(
-      "/instagram/user/detailed-info",
-      { username: clean },
-    );
-    const user: EDUser = "user" in (raw as { user?: EDUser })
-      ? (raw as { user: EDUser }).user
-      : (raw as EDUser);
+    let res: { data: unknown };
+    try {
+      res = await this.client.instagram.userDetailedInfo({ username: clean });
+    } catch (e) {
+      throw this.mapError(e, "/instagram/user/detailed-info");
+    }
+    const user = res.data as EDUser | undefined;
     if (!user || !user.username) {
       throw new DataSourceError(
         `ensembledata /instagram/user/detailed-info returned no user for ${clean} — falling through`,
@@ -153,75 +177,6 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
     return user;
   }
 
-  // Low-level HTTP wrapper. All errors normalized to our error taxonomy
-  // so the ChainAdapter can classify and route them.
-  private async get<T>(path: string, params: Record<string, string> = {}): Promise<T> {
-    if (!this.token) {
-      throw new DataSourceError("ENSEMBLEDATA_TOKEN is not configured");
-    }
-    // Trim / strip quotes in case the Railway env var was pasted with
-    // accidental wrapping quotes or trailing whitespace — a common
-    // source of "why is this failing at 30ms" fast-fails.
-    const cleanToken = this.token.trim().replace(/^["']|["']$/g, "");
-    const qs = new URLSearchParams({ ...params, token: cleanToken }).toString();
-    const url = `${BASE}${path}?${qs}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-    try {
-      const res = await fetch(url, {
-        headers: {
-          accept: "application/json",
-          // Ensembledata (and the IG endpoints it proxies) will often
-          // reject requests with Node's default undici UA. Present as
-          // a plain browser to match the working direct-URL test.
-          "user-agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        },
-        signal: controller.signal,
-        cache: "no-store",
-      });
-      if (res.status === 402) {
-        // Insufficient units — treat as rate limit so the chain skips ahead
-        // and the breaker trips after 3 straight 402s.
-        throw new ProviderRateLimitError("ensembledata", path);
-      }
-      if (res.status === 429) {
-        throw new ProviderRateLimitError("ensembledata", path);
-      }
-      // For any non-2xx status, include the ACTUAL response body in
-      // the error message so /admin/providers shows what Ensembledata
-      // said. Also emit a full console log so Railway logs capture
-      // everything even after the truncated admin-panel view.
-      if (!res.ok) {
-        const body = await res.text().catch(() => "<unreadable>");
-        const tokenPrefix = cleanToken.slice(0, 4);
-        const tokenLen = cleanToken.length;
-        console.error(
-          `[chain] ensembledata GET ${path} → ${res.status} (token: ${tokenPrefix}…${tokenLen}chars) body: ${body.slice(0, 500)}`,
-        );
-        throw new DataSourceError(
-          `ensembledata GET ${path} → ${res.status}: ${body.slice(0, 150)}`,
-        );
-      }
-      const json = (await res.json()) as { data?: unknown; units_charged?: number };
-      // Every endpoint wraps its payload as { data: ..., units_charged: N }.
-      // Some legacy endpoints return the payload flat — accept both.
-      return (json.data !== undefined ? json.data : json) as T;
-    } catch (e) {
-      if (e instanceof ProviderRateLimitError) throw e;
-      if (e instanceof HandleNotFoundError) throw e;
-      if (e instanceof PrivateAccountError) throw e;
-      if (e instanceof DataSourceError) throw e;
-      if (e instanceof Error && e.name === "AbortError") {
-        throw new DataSourceError(`ensembledata timeout after ${TIMEOUT_MS / 1000}s`);
-      }
-      throw new DataSourceError("ensembledata fetch error", e);
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
-  // ── getProfile ────────────────────────────────────────────────────────────
   override async getProfile(platform: Platform, handle: string): Promise<Profile> {
     if (platform !== "instagram") {
       throw new DataSourceError(`ensembledata-instagram doesn't serve ${platform}`);
@@ -244,11 +199,6 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
     };
   }
 
-  // ── getRecentPosts ────────────────────────────────────────────────────────
-  // detailed-info already returns the last ~12 posts inline via
-  // edge_owner_to_timeline_media.edges. Reuse the memo so we pay for
-  // one call, not two. If the caller asks for MORE than the inline
-  // count, top up with the /user/posts endpoint (same GraphQL shape).
   override async getRecentPosts(
     platform: Platform,
     handle: string,
@@ -261,78 +211,97 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
     for (const e of user.edge_owner_to_timeline_media?.edges ?? []) {
       if (e?.node) inline.push(e.node);
     }
-    if (inline.length >= n) {
+    if (inline.length >= n || !this.client) {
       return inline.slice(0, n).map(normalizeMediaNode);
     }
-    // Fell short — top up with a dedicated /user/posts call. Same
-    // GraphQL wrapper is expected.
+    // Top up when caller asked for more posts than the inlined feed.
+    const userId = user.id;
+    if (!userId) return inline.slice(0, n).map(normalizeMediaNode);
     try {
-      const raw = await this.get<
-        { edges?: Array<{ node: EDMediaNode }> } | { items?: EDMediaNode[] } | EDMediaNode[]
-      >("/instagram/user/posts", { username: clean, depth: "1" });
-      const more: EDMediaNode[] = Array.isArray(raw)
-        ? raw
-        : "edges" in (raw as { edges?: unknown }) && Array.isArray((raw as { edges?: unknown[] }).edges)
-          ? ((raw as { edges: Array<{ node: EDMediaNode }> }).edges
+      const res = await this.client.instagram.userPosts({ userId, depth: 1 });
+      const rawMore = res.data as
+        | { edges?: Array<{ node: EDMediaNode }> }
+        | { items?: EDMediaNode[] }
+        | EDMediaNode[];
+      const more: EDMediaNode[] = Array.isArray(rawMore)
+        ? rawMore
+        : "edges" in (rawMore as { edges?: unknown }) && Array.isArray((rawMore as { edges?: unknown[] }).edges)
+          ? ((rawMore as { edges: Array<{ node: EDMediaNode }> }).edges
               .map((e) => e?.node)
               .filter((v): v is EDMediaNode => Boolean(v)))
-          : ((raw as { items?: EDMediaNode[] }).items ?? []);
+          : ((rawMore as { items?: EDMediaNode[] }).items ?? []);
       const seen = new Set(inline.map((p) => p.id ?? p.shortcode ?? ""));
       for (const node of more) {
-        const key = node.id ?? node.shortcode ?? "";
-        if (!seen.has(key)) {
+        const k = node.id ?? node.shortcode ?? "";
+        if (!seen.has(k)) {
           inline.push(node);
-          seen.add(key);
+          seen.add(k);
         }
       }
     } catch {
-      // Non-fatal — chain will fall through to next provider if
-      // downstream really needs more posts and the primary returned
-      // fewer than requested.
+      // Non-fatal — return whatever we got inline.
     }
     return inline.slice(0, n).map(normalizeMediaNode);
   }
 
-  // ── getRecentComments ─────────────────────────────────────────────────────
   override async getRecentComments(
     platform: Platform,
     handle: string,
     n: number,
   ): Promise<{ post: Post; comments: CommentItem[] }> {
     if (platform !== "instagram") return super.getRecentComments(platform, handle, n);
+    if (!this.client) throw new DataSourceError("ENSEMBLEDATA_TOKEN is not configured");
     const posts = await this.getRecentPosts(platform, handle, 3);
     if (posts.length === 0) return super.getRecentComments(platform, handle, n);
     const target = posts[0]!;
-    const raw = await this.get<{ items?: EDComment[] } | EDComment[]>(
-      "/instagram/post/comments",
-      { post_id: target.id, depth: "1" },
-    );
-    const items = Array.isArray(raw) ? raw : (raw?.items ?? []);
-    const comments: CommentItem[] = items.slice(0, n).map((c, i) => ({
-      id: String(c.pk ?? c.id ?? i),
-      username: c.user?.username ?? "unknown",
-      text: c.text ?? "",
-      postedAt: c.created_at_utc
-        ? new Date(c.created_at_utc * 1000).toISOString()
-        : c.created_at
-          ? new Date(c.created_at * 1000).toISOString()
-          : new Date().toISOString(),
-      fullName: c.user?.full_name ?? undefined,
-      avatarUrl: c.user?.profile_pic_url ?? undefined,
-    }));
+    // postComments needs the shortcode, not the internal id.
+    const shortcode = this.extractShortcode(target.permalink) ?? target.id;
+    let res: { data: unknown };
+    try {
+      res = await this.client.instagram.postComments({ code: shortcode });
+    } catch (e) {
+      throw this.mapError(e, "/instagram/post/comments");
+    }
+    const rawItems = res.data as
+      | { comments?: EDCommentNode[] }
+      | { items?: EDCommentNode[] }
+      | EDCommentNode[];
+    const items: EDCommentNode[] = Array.isArray(rawItems)
+      ? rawItems
+      : ((rawItems as { comments?: EDCommentNode[] }).comments ??
+          (rawItems as { items?: EDCommentNode[] }).items ??
+          []);
+    const comments: CommentItem[] = items.slice(0, n).map((c, i) => {
+      const owner = c.owner ?? c.user ?? {};
+      return {
+        id: String(c.pk ?? c.id ?? i),
+        username: owner.username ?? "unknown",
+        text: c.text ?? "",
+        postedAt: c.created_at_utc
+          ? new Date(c.created_at_utc * 1000).toISOString()
+          : c.created_at
+            ? new Date(c.created_at * 1000).toISOString()
+            : new Date().toISOString(),
+        fullName: owner.full_name ?? undefined,
+        avatarUrl: owner.profile_pic_url ?? undefined,
+      };
+    });
     return { post: target, comments };
   }
 
-  // ── getFollowerSample ─────────────────────────────────────────────────────
-  // The followers endpoint needs a numeric user_id, which we already
-  // have from the cached detailed-info payload — reuse it, don't pay
-  // for a second lookup.
+  private extractShortcode(permalink?: string): string | null {
+    if (!permalink) return null;
+    const m = permalink.match(/\/p\/([^/?]+)/);
+    return m ? m[1]! : null;
+  }
+
   override async getFollowerSample(
     platform: Platform,
     handle: string,
     n: number,
   ): Promise<FollowerLite[]> {
     if (platform !== "instagram") return [];
+    if (!this.client) throw new DataSourceError("ENSEMBLEDATA_TOKEN is not configured");
     const clean = handle.replace(/^@/, "").trim();
     const user = await this.fetchDetailedInfo(clean);
     const userId = user.id;
@@ -341,9 +310,15 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
         `ensembledata could not resolve user id for ${clean} — falling through`,
       );
     }
-    const raw = await this.get<
-      { items?: Array<{ username?: string; full_name?: string }> } | Array<{ username?: string; full_name?: string }>
-    >("/instagram/user/followers", { user_id: userId });
+    let res: { data: unknown };
+    try {
+      res = await this.client.instagram.userFollowers({ userId });
+    } catch (e) {
+      throw this.mapError(e, "/instagram/user/followers");
+    }
+    const raw = res.data as
+      | { items?: Array<{ username?: string; full_name?: string }> }
+      | Array<{ username?: string; full_name?: string }>;
     const items = Array.isArray(raw) ? raw : (raw?.items ?? []);
     return items.slice(0, n).map((f) => ({
       username: f.username ?? "",
@@ -351,11 +326,6 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
     }));
   }
 
-  // ── isHandleAvailable ─────────────────────────────────────────────────────
-  // Delegate to getProfile so we share its "trust behavior": if
-  // Ensembledata can't confidently answer, we throw DataSourceError
-  // and let the chain ask Hiker/RapidAPI. Never returns "available:
-  // true" from a suspect Ensembledata response.
   override async isHandleAvailable(
     platform: Platform,
     handle: string,
@@ -366,10 +336,7 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
       return {
         platform: "instagram",
         available: false,
-        takenBy: {
-          followers: profile.followers,
-          lastActiveAgo: "recently",
-        },
+        takenBy: { followers: profile.followers, lastActiveAgo: "recently" },
       };
     } catch (e) {
       if (e instanceof HandleNotFoundError) {
@@ -379,7 +346,6 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
     }
   }
 
-  // ── getThumbnail ──────────────────────────────────────────────────────────
   override async getThumbnail(
     platform: Platform,
     handle: string,
@@ -398,43 +364,29 @@ export class EnsembleDataInstagramAdapter extends MockProvider implements DataAd
     };
   }
 
-  // ── Phase 2/3 methods — no cheap Ensembledata endpoint, delegate to
-  //     Mock so the chain moves to the next provider on demand ────────────
-  override async getDemographics(platform: Platform, handle: string): Promise<DemographicSplit> {
-    // No first-party demographics endpoint yet. Throw so chain falls through.
+  override async getDemographics(_platform: Platform, _handle: string): Promise<DemographicSplit> {
     throw new DataSourceError("ensembledata: getDemographics not implemented");
   }
-
-  override async getReachSignals(platform: Platform, handle: string): Promise<ReachSignals> {
+  override async getReachSignals(_platform: Platform, _handle: string): Promise<ReachSignals> {
     throw new DataSourceError("ensembledata: getReachSignals not implemented");
   }
-
-  override async getFollowerAudit(platform: Platform, handle: string, sample: number): Promise<FollowerAudit> {
+  override async getFollowerAudit(_platform: Platform, _handle: string, _sample: number): Promise<FollowerAudit> {
     throw new DataSourceError("ensembledata: getFollowerAudit not implemented");
   }
-
-  override async getUnfollowerDelta(platform: Platform, handle: string): Promise<UnfollowerDelta> {
+  override async getUnfollowerDelta(_platform: Platform, _handle: string): Promise<UnfollowerDelta> {
     throw new DataSourceError("ensembledata: getUnfollowerDelta not implemented");
   }
-
-  override async getLiveCount(platform: Platform, handle: string): Promise<LiveCount> {
+  override async getLiveCount(_platform: Platform, _handle: string): Promise<LiveCount> {
     throw new DataSourceError("ensembledata: getLiveCount not implemented");
   }
-
-  override async getHashtagStatus(platform: Platform, hashtag: string): Promise<HashtagStatus> {
+  override async getHashtagStatus(_platform: Platform, _hashtag: string): Promise<HashtagStatus> {
     throw new DataSourceError("ensembledata: getHashtagStatus not implemented");
   }
-
   override async estimateEarnings(platform: Platform, profile: Profile, posts: Post[]): Promise<EarningsEstimate> {
-    // Earnings is a pure calc over profile + posts — MockProvider's
-    // implementation is fine. Delegate rather than throw.
     return super.estimateEarnings(platform, profile, posts);
   }
 }
 
-// GraphQL post node → our Post shape. Handles Image / Video / Sidecar
-// (carousel) — sidecar's first-child image is what the feed thumbnail
-// shows, so display_url on the parent is correct for all three.
 function normalizeMediaNode(n: EDMediaNode): Post {
   const caption = n.edge_media_to_caption?.edges?.[0]?.node?.text ?? undefined;
   const likes = n.edge_liked_by?.count ?? n.edge_media_preview_like?.count ?? 0;
