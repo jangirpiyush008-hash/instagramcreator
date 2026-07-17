@@ -3,9 +3,9 @@ import type { SocialTool } from "./types";
 import { engagementRate } from "./engagement-rate";
 import { usernameChecker } from "./username-checker";
 import { bannedHashtag } from "./banned-hashtag";
+import { hashtagFinder } from "./hashtag-finder";
 import { thumbnailDownloader } from "./thumbnail-downloader";
 import { earningsEstimator } from "./earnings-estimator";
-import { liveCounter } from "./live-counter";
 import { shadowbanChecker } from "./shadowban-checker";
 import { commentPicker } from "./comment-picker";
 import { unfollowerTracker } from "./unfollower-tracker";
@@ -24,9 +24,9 @@ export const TOOLS: readonly SocialTool[] = [
   engagementRate,
   usernameChecker,
   bannedHashtag,
+  hashtagFinder,
   thumbnailDownloader,
   earningsEstimator,
-  liveCounter,
   shadowbanChecker,
   commentPicker,
   unfollowerTracker,

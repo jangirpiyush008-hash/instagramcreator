@@ -26,7 +26,6 @@ export const TOOL_CATEGORIES: {
       "gender-split",
       "fake-follower",
       "unfollower-tracker",
-      "live-counter",
       "shadowban-checker",
       "earnings-estimator",
     ],
@@ -39,6 +38,6 @@ export const TOOL_CATEGORIES: {
   {
     id: "discovery",
     label: "Discovery",
-    toolIds: ["username-checker", "banned-hashtag"],
+    toolIds: ["username-checker", "banned-hashtag", "hashtag-finder"],
   },
 ];

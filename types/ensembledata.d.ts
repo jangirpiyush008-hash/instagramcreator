@@ -52,6 +52,17 @@ declare module "ensembledata" {
       args: { awemeId: string; cursor?: number },
       options?: { timeout?: number },
     ): Promise<EDResponse<unknown>>;
+    hashtagSearch(
+      args: { hashtag: string; cursor?: number },
+      options?: { timeout?: number },
+    ): Promise<EDResponse<unknown>>;
+  }
+
+  interface EDYoutube {
+    hashtagSearch(
+      args: { hashtag: string; depth: number; onlyShorts?: boolean },
+      options?: { timeout?: number },
+    ): Promise<EDResponse<unknown>>;
   }
 
   export class EDClient {
@@ -62,5 +73,6 @@ declare module "ensembledata" {
     });
     readonly instagram: EDInstagram;
     readonly tiktok: EDTiktok;
+    readonly youtube: EDYoutube;
   }
 }

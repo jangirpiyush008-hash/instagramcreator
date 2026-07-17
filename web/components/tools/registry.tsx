@@ -6,7 +6,7 @@ import { UsernameCheckerView } from "./views/UsernameCheckerView";
 import { BannedHashtagView } from "./views/BannedHashtagView";
 import { ThumbnailDownloaderView } from "./views/ThumbnailDownloaderView";
 import { EarningsEstimatorView } from "./views/EarningsEstimatorView";
-import { LiveCounterView } from "./views/LiveCounterView";
+import { HashtagFinderView } from "./views/HashtagFinderView";
 import { ShadowbanCheckerView } from "./views/ShadowbanCheckerView";
 import { CommentPickerView } from "./views/CommentPickerView";
 import { UnfollowerTrackerView } from "./views/UnfollowerTrackerView";
@@ -39,7 +39,7 @@ export const VIEWS: Record<string, ToolView> = {
   "banned-hashtag": BannedHashtagView,
   "thumbnail-downloader": ThumbnailDownloaderView,
   "earnings-estimator": EarningsEstimatorView,
-  "live-counter": LiveCounterView,
+  "hashtag-finder": HashtagFinderView,
   "shadowban-checker": ShadowbanCheckerView,
   "comment-picker": CommentPickerView,
   "unfollower-tracker": UnfollowerTrackerView,

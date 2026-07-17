@@ -17,7 +17,7 @@ export const CREDIT_COSTS: Record<string, number> = {
   "username-checker": 3,
 
   // Single-primitive
-  "live-counter": 5,
+  "hashtag-finder": 8,
   "unfollower-tracker": 5,
   "thumbnail-downloader": 8,
 
