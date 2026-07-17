@@ -1,16 +1,17 @@
 // TikTok data via EnsembleData (https://ensembledata.com).
 //
-// Same provider as the IG adapter but under the /tiktok/ path namespace.
+// Same provider as the IG adapter but under the /tt/ path namespace.
 // Positioned as an additional TikTok chain member alongside tikwm.
 // Chain order (TT): tikwm-direct → ensembledata → rapidapi-tikwm → mock.
 //
 // Auth: single `token` query param. Base URL is
-// https://ensembledata.com/apis/tiktok/*.
+// https://ensembledata.com/apis/tt/*.
 //
-// Endpoints wired here (CONFIRMED /tiktok/* prefix — not /tt/*):
-//   GET  /apis/tiktok/user/info      — profile lookup by username
-//   GET  /apis/tiktok/user/posts     — recent videos
-//   GET  /apis/tiktok/post/comments  — comments on a specific video
+// Endpoints wired here (CONFIRMED against the official ensembledata-node
+// SDK — TikTok uses the /tt/* prefix even though IG uses /instagram/*):
+//   GET  /apis/tt/user/info      — profile lookup by username
+//   GET  /apis/tt/user/posts     — recent videos
+//   GET  /apis/tt/post/comments  — comments on a specific video
 
 import type { Platform } from "../types";
 import type {
@@ -144,7 +145,7 @@ export class EnsembleDataTikTokAdapter extends MockProvider implements DataAdapt
     }
     const clean = handle.replace(/^@/, "").trim();
     const raw = await this.get<{ user?: EDTikTokUser } | EDTikTokUser>(
-      "/tiktok/user/info",
+      "/tt/user/info",
       { username: clean },
     );
     const user: EDTikTokUser = "user" in (raw as { user?: EDTikTokUser })
@@ -153,7 +154,7 @@ export class EnsembleDataTikTokAdapter extends MockProvider implements DataAdapt
     const returnedHandle = user?.unique_id ?? user?.username;
     if (!returnedHandle) {
       throw new DataSourceError(
-        `ensembledata /tiktok/user/info returned no user for ${clean} — falling through`,
+        `ensembledata /tt/user/info returned no user for ${clean} — falling through`,
       );
     }
     if (returnedHandle.toLowerCase() !== clean.toLowerCase()) {
@@ -188,7 +189,7 @@ export class EnsembleDataTikTokAdapter extends MockProvider implements DataAdapt
     if (platform !== "tiktok") return [];
     const clean = handle.replace(/^@/, "").trim();
     const raw = await this.get<{ items?: EDTikTokVideo[] } | EDTikTokVideo[]>(
-      "/tiktok/user/posts",
+      "/tt/user/posts",
       { username: clean, depth: "1" },
     );
     const items = Array.isArray(raw) ? raw : (raw?.items ?? []);
@@ -205,7 +206,7 @@ export class EnsembleDataTikTokAdapter extends MockProvider implements DataAdapt
     if (posts.length === 0) return super.getRecentComments(platform, handle, n);
     const target = posts[0]!;
     const raw = await this.get<{ items?: EDTikTokComment[] } | EDTikTokComment[]>(
-      "/tiktok/post/comments",
+      "/tt/post/comments",
       { post_id: target.id },
     );
     const items = Array.isArray(raw) ? raw : (raw?.items ?? []);
