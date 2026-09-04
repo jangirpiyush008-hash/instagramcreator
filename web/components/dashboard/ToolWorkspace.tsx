@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Platform } from "@/core/types";
 import { ScanResult } from "@/web/components/ScanResult";
-import { normalizeHandle, isValidHandle } from "@/core/utils/handle";
+import { classifyUrl, normalizeHandle, isValidHandle } from "@/core/utils/handle";
 import { useHandle, usePlatform } from "./PlatformContext";
 import { creditCost } from "@/core/api/credits";
 
@@ -68,6 +68,19 @@ export function ToolWorkspace({
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    // If the user pasted a reel/post/story URL, tell them clearly before
+    // we waste a provider call. Current tools all analyze creator
+    // PROFILES, not individual posts — so `instagram.com/reel/abc` is a
+    // dead end.
+    const kind = classifyUrl(handleInput);
+    if (kind === "reel" || kind === "post" || kind === "story") {
+      setError(
+        `That's a ${kind} link. This tool analyzes a creator's PROFILE — paste their profile URL (e.g. instagram.com/${popular[0] ?? "creator"}) or just their handle (@${popular[0] ?? "creator"}).`,
+      );
+      return;
+    }
+
     const h = normalizeHandle(handleInput);
     if (!h || !isValidHandle(h)) {
       setError("Enter a valid handle (letters, numbers, dots, dashes, underscores).");

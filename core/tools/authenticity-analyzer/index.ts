@@ -33,6 +33,8 @@ import { analyzeProfileSignals } from "./profile-signals";
 import { computeVerdict } from "./verdict";
 import { computeBrandFit } from "./brand-fit";
 import { enrichCommentAudience } from "@/core/data/audience-enrichment";
+import { RESERVED_HANDLE_PATHS } from "@/core/utils/handle";
+import { HandleNotFoundError } from "@/core/utils/errors";
 
 const RECENT_POST_COUNT = 24;              // was 12 — bigger baseline for outlier detection
 const COMMENT_SAMPLE_SIZE = 120;
@@ -60,6 +62,18 @@ export const authenticityAnalyzer: SocialTool = {
   async run({ platform, handle, data }) {
     if (platform !== "instagram") {
       throw new Error("Authenticity Analyzer currently supports Instagram only");
+    }
+
+    // Defense in depth: reserved platform paths (e.g. "reel", "p", "tv")
+    // strip out of a reel/post URL and look like a handle. If one slips
+    // past client-side validation, reject BEFORE we hit the provider —
+    // otherwise we burn a call on a user that doesn't exist and surface
+    // as a misleading "rate-limited" via the chain circuit-breaker.
+    // Client-side validation already gives the user the helpful "paste a
+    // profile URL" message; this server-side guard is just belt-and-
+    // suspenders so a direct API call can't burn quota either.
+    if (RESERVED_HANDLE_PATHS.has(handle.toLowerCase())) {
+      throw new HandleNotFoundError(handle, platform);
     }
 
     // ── 1. Fan-out fetches ──────────────────────────────────────────
