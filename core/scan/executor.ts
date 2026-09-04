@@ -57,9 +57,14 @@ export async function executeScan(args: ExecuteScanArgs): Promise<ExecuteScanRes
   const bust = !!args.bustCache || !!tool.skipCache;
 
   // 1) cache lookup — cache is per-tool by scan key, only used for default
-  //    params AND when the caller didn't ask to bust cache.
+  //    params AND when the caller didn't ask to bust cache. Per-tool
+  //    cacheTtlSeconds also caps max age on the read so stale rows from
+  //    a previous longer-TTL config don't leak through after we shorten
+  //    the TTL.
   const cached =
-    bust || hasParams ? null : await getCachedToolResult(supa, platform, handle, args.toolId);
+    bust || hasParams
+      ? null
+      : await getCachedToolResult(supa, platform, handle, args.toolId, tool.cacheTtlSeconds);
   if (cached) {
     return { result: cached, cacheHit: true };
   }
@@ -80,9 +85,17 @@ export async function executeScan(args: ExecuteScanArgs): Promise<ExecuteScanRes
   }
 
   // 4) cache write-back (default-params runs only, and only when this
-  //    tool participates in the ToolResult cache).
+  //    tool participates in the ToolResult cache). Custom per-tool TTL
+  //    when set — otherwise the shared 48h default.
   if (!hasParams && !tool.skipCache) {
-    await writeCachedToolResult(supa, platform, handle, args.toolId, result);
+    await writeCachedToolResult(
+      supa,
+      platform,
+      handle,
+      args.toolId,
+      result,
+      tool.cacheTtlSeconds,
+    );
   }
 
   return { result, cacheHit: false };

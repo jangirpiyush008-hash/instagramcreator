@@ -21,12 +21,20 @@ export interface SocialTool {
   platforms: Platform[];
   phase: 0 | 1 | 2 | 3;       // 0 = shipped; 1/2/3 = roadmap (intent picker shows badge)
   seo: { slug: string; title: string; description: string };
-  // Opt out of the 48h ToolResult cache. Underlying provider primitive
-  // cache (CachedAdapter) still applies. Use for tools where users expect
-  // a fresh read every submit (e.g. Authenticity Analyzer's decode score
-  // should re-run on every click, not return the same cached verdict for
-  // 48 hours). Default is false — the standard cache path.
+  // Opt out of the 48h ToolResult cache entirely. Underlying provider
+  // primitive cache (CachedAdapter) still applies. Use only when EVERY
+  // scan MUST fetch fresh (very rare — usually cacheTtlSeconds is what
+  // you want instead). Default is false.
   skipCache?: boolean;
+  // Override the 48h ToolResult cache TTL for this tool (in seconds).
+  // Used for tools where users expect fresh-feeling scans but where a
+  // short debounce (e.g. 5 min) is fine — repeat clicks on the same
+  // handle within the window return cached results (no credit charge,
+  // no provider burn), but any scan older than this returns fresh.
+  // The read path also honors this — old cache rows with longer TTL
+  // are treated as expired for this tool, so a change here can't leak
+  // stale results from pre-change cache entries.
+  cacheTtlSeconds?: number;
   // pure logic — reads ONLY from the DataAdapter. No network calls of its own.
   run(args: {
     platform: Platform;

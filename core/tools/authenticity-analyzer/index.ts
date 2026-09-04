@@ -11,13 +11,15 @@
 // library / burst-detection / language-analysis / profile-signals /
 // verdict / brand-fit) so nothing gets buried inside a React view.
 //
-// Cache policy: skipCache is TRUE for this tool. Users expect a fresh
-// analysis each time they click Fetch. The 48h ToolResult cache would
-// return the same verdict on every scan and silently skip credit
-// charging — that's the "same result / credits not draining" leak
-// this flag closes. The underlying provider-primitive cache (in
-// CachedAdapter) still applies, so we don't burn provider budget
-// within a single request.
+// Cache policy: 5-minute per-tool TTL (300 s). The default 48h cache
+// was returning the same verdict on every scan (users saw "same result,
+// no credit drained"). Fully skipping the cache instead burned Ensemble-
+// data quota on every double-click and pushed us into upstream rate-
+// limits. 5 min splits the difference: rapid repeat-scans of the same
+// handle debounce for free (no provider burn, no credit charge), but
+// any real re-visit after 5 min triggers a fresh scan + real credit.
+// The read path caps max age at 5 min too, so pre-change 48h rows
+// don't leak stale results.
 
 import type { SocialTool } from "../types";
 import type { CommentItem, Post } from "@/core/data/adapter";
@@ -34,7 +36,11 @@ import { enrichCommentAudience } from "@/core/data/audience-enrichment";
 
 const RECENT_POST_COUNT = 24;              // was 12 — bigger baseline for outlier detection
 const COMMENT_SAMPLE_SIZE = 120;
-const AUDIENCE_ENRICHMENT_SAMPLE = 15;
+// Cut from 15 → 8. Each sampled profile is an extra Ensembledata call —
+// 15 was pushing scan cost to ~18 provider calls and burning quota. 8 is
+// still statistically usable (fake-follower uses the same signal at 15
+// but this tool has 6 other corroborating signals to lean on).
+const AUDIENCE_ENRICHMENT_SAMPLE = 8;
 
 export const authenticityAnalyzer: SocialTool = {
   id: "authenticity-analyzer",
@@ -44,7 +50,7 @@ export const authenticityAnalyzer: SocialTool = {
     "Multi-signal analysis of a creator's authenticity — audience quality, engagement authenticity, organic reach strength, paid content, and fraud risk. Ships a Final Verdict + Brand Deal Fit call at the top. High reach beyond the follower base is treated as a positive signal, never as fake evidence.",
   platforms: ["instagram"],
   phase: 0,
-  skipCache: true,   // fresh scan per submit — see file header
+  cacheTtlSeconds: 300,   // 5-minute debounce — see file header
   seo: {
     slug: "authenticity-analyzer",
     title: "Instagram Authenticity Analyzer — Real, Fake, or Paid Reach",
