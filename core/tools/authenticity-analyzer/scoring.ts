@@ -20,6 +20,9 @@ import type { CommentQualitySignal } from "./comment-quality";
 import type { AdLibraryProbe } from "./ad-library";
 import type { PaidSignalResult } from "./paid-signals";
 import { classifyPaid } from "./paid-signals";
+import type { BurstSignal } from "./burst-detection";
+import type { LanguageSignal } from "./language-analysis";
+import type { ProfileSignal } from "./profile-signals";
 
 // ── Weights — surface so we can retune in one place ───────────────────
 export const WEIGHTS = {
@@ -93,6 +96,14 @@ export interface ScoringInputs {
   commentQuality: CommentQualitySignal;
   paidSignalsPerPost: PaidSignalResult[];  // parallel to posts (paidSignalsPerPost[i] is signals for posts[i])
   adLibrary: AdLibraryProbe | null;
+
+  // v2 depth signals — all optional so the scoring engine still works
+  // with a partial input set (unit tests, degraded fetches).
+  burst?: BurstSignal | null;
+  language?: LanguageSignal | null;
+  profileSignals?: ProfileSignal | null;
+  audienceCompletenessPct?: number | null;  // 0-100 — bio+avatar completeness across sampled commenters
+  audienceSampleSize?: number;              // how many commenter profiles were sampled
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -119,9 +130,10 @@ function median(nums: number[]): number {
 
 // ── Sub-score: AUDIENCE AUTHENTICITY ──────────────────────────────────
 // "How healthy do the account's audience signals look — engagement rate,
-// follow-back ratio, activity, verification." NOT reach.
+// follow-back ratio, activity, verification, commenter profile completeness."
+// NOT reach.
 function scoreAudience(inputs: ScoringInputs): SubScore {
-  const { profile, posts } = inputs;
+  const { profile, posts, audienceCompletenessPct, audienceSampleSize } = inputs;
   const followers = profile.followers ?? 0;
   const following = profile.following ?? 0;
 
@@ -188,6 +200,27 @@ function scoreAudience(inputs: ScoringInputs): SubScore {
     reasons.push("Verified account — supporting authenticity signal");
   }
 
+  // Commenter profile-completeness — bio + custom avatar rate across a
+  // sample of recent commenters. Real audiences sit at 60-90%; bot-heavy
+  // audiences fall below 30% because the accounts are throwaway shells.
+  if (audienceCompletenessPct !== null && audienceCompletenessPct !== undefined && (audienceSampleSize ?? 0) >= 5) {
+    if (audienceCompletenessPct < 25) {
+      score -= 20;
+      reasons.push(
+        `Only ${audienceCompletenessPct.toFixed(0)}% of ${audienceSampleSize} sampled commenters have both a bio and a custom avatar — bot-heavy audience`,
+      );
+    } else if (audienceCompletenessPct < 45) {
+      score -= 8;
+      reasons.push(
+        `${audienceCompletenessPct.toFixed(0)}% of ${audienceSampleSize} sampled commenters have bio+avatar — below the healthy 60%+ band`,
+      );
+    } else if (audienceCompletenessPct >= 65) {
+      reasons.push(
+        `${audienceCompletenessPct.toFixed(0)}% of sampled commenters have populated profiles — healthy audience shape`,
+      );
+    }
+  }
+
   score = clamp(score, 20, 100);
 
   return {
@@ -204,7 +237,7 @@ function scoreAudience(inputs: ScoringInputs): SubScore {
 // substance) looks. This is the module where a bought-engagement pattern
 // gets caught even when the raw ER looks normal.
 function scoreEngagement(inputs: ScoringInputs): SubScore {
-  const { posts, commentQuality } = inputs;
+  const { posts, commentQuality, burst, language } = inputs;
   const reasons: string[] = [];
 
   if (posts.length === 0 || commentQuality.totalComments === 0) {
@@ -258,6 +291,29 @@ function scoreEngagement(inputs: ScoringInputs): SubScore {
     } else if (likeRate >= 2.5) {
       // Reward the healthy case — nudge up.
       score = Math.min(100, score + 3);
+    }
+  }
+
+  // v2: burst-timing signal. Bought comments arrive in tight bursts.
+  if (burst?.available) {
+    if (burst.score < 50) {
+      score -= 15;
+      if (burst.flag) reasons.push(burst.flag);
+    } else if (burst.score < 70) {
+      score -= 6;
+      if (burst.flag) reasons.push(burst.flag);
+    }
+  }
+
+  // v2: language-mismatch signal. Farm accounts leak away from the
+  // creator's audience language when they buy cheap generic comments.
+  if (language?.available && language.mismatch) {
+    if (language.score < 60) {
+      score -= 12;
+      if (language.flag) reasons.push(language.flag);
+    } else {
+      score -= 5;
+      if (language.flag) reasons.push(language.flag);
     }
   }
 
@@ -362,7 +418,7 @@ function scoreReach(inputs: ScoringInputs): SubScore {
 // (transparency). Undisclosed high-signal content is what raises FRAUD
 // risk elsewhere, not this score.
 function scorePaid(inputs: ScoringInputs): PaidScore {
-  const { paidSignalsPerPost, adLibrary } = inputs;
+  const { paidSignalsPerPost, adLibrary, profileSignals } = inputs;
   const total = paidSignalsPerPost.length;
 
   if (total === 0) {
@@ -406,7 +462,18 @@ function scorePaid(inputs: ScoringInputs): PaidScore {
     reasons.push("Meta Ad Library: no active Meta-served ads for this account");
   }
 
-  const aggregated = Math.max(maxScore, avgScore * 1.2) + boostBonus;
+  // v2: bio + business-category commercial-intent baseline. Doesn't flag any
+  // specific post — just lifts the prior a bit when the profile shape is
+  // clearly commercial (bio: "DM for collabs", category: retail).
+  let profileBaselineBonus = 0;
+  if (profileSignals && profileSignals.commercialIntentScore >= 40) {
+    profileBaselineBonus = Math.min(15, Math.round(profileSignals.commercialIntentScore / 8));
+    if (profileSignals.reasons.length > 0) {
+      reasons.push(`Profile shape: ${profileSignals.reasons[0]}`);
+    }
+  }
+
+  const aggregated = Math.max(maxScore, avgScore * 1.2) + boostBonus + profileBaselineBonus;
 
   let source: DataSource = "inferred";
   if (hasVerifiedFlag || adLibrary?.confidence === "verified") source = "verified";
@@ -441,7 +508,7 @@ function scoreFraud(
   audience: SubScore,
   engagement: SubScore,
 ): FraudScore {
-  const { profile, posts, commentQuality } = inputs;
+  const { profile, posts, commentQuality, burst, language, audienceCompletenessPct, audienceSampleSize } = inputs;
   const followers = profile.followers ?? 0;
 
   if (posts.length === 0) {
@@ -494,6 +561,34 @@ function scoreFraud(
         `Only ${likeRate.toFixed(2)}% of viewers liked across recent reels — pumped-view pattern`,
       );
     }
+  }
+
+  // v2: burst pattern. A tight comment burst on a scan with otherwise
+  // healthy numbers is corroborating evidence — small nudge.
+  if (burst?.available && burst.score < 50 && burst.flag) {
+    badness += 12;
+    reasons.push(burst.flag);
+  }
+
+  // v2: language mismatch — strong corroborating signal when severe.
+  if (language?.available && language.mismatch && language.score < 55 && language.flag) {
+    badness += 10;
+    reasons.push(language.flag);
+  }
+
+  // v2: very low commenter profile completeness on a big account = bot
+  // farm audience.
+  if (
+    audienceCompletenessPct !== null &&
+    audienceCompletenessPct !== undefined &&
+    (audienceSampleSize ?? 0) >= 8 &&
+    audienceCompletenessPct < 25 &&
+    followers >= 20_000
+  ) {
+    badness += 15;
+    reasons.push(
+      `Only ${audienceCompletenessPct.toFixed(0)}% of sampled commenters have populated profiles — bot-farm audience shape`,
+    );
   }
 
   let risk: FraudRisk;

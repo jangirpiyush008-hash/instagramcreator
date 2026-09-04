@@ -2,16 +2,22 @@
 // (or profile URL, which is normalized to a handle by the executor)
 // and returns a multi-signal Decode Score plus five orthogonal
 // sub-scores: audience, engagement, reach, paid-content, fraud.
+// v2 also emits a Final Verdict (the one-line partner/don't-partner
+// call) and a Brand Deal Fit recommendation (which collab structure
+// suits this creator, plus a rough INR rate benchmark).
 //
-// This is the SocialTool run() glue only. All logic lives in the
+// This is the SocialTool run() glue only. All heuristics live in the
 // sibling modules (scoring / comment-quality / paid-signals / ad-
-// library) so the weights and heuristics stay unit-testable and
-// tunable in one place.
+// library / burst-detection / language-analysis / profile-signals /
+// verdict / brand-fit) so nothing gets buried inside a React view.
 //
-// MVP scope note: analyzes the profile + last 12 posts + top-post
-// comments. Post/reel-URL specific analysis (paste ONE reel URL, get
-// scores just for THAT reel) needs a getMediaByShortcode adapter
-// method that doesn't exist yet — that's the v2 slot.
+// Cache policy: skipCache is TRUE for this tool. Users expect a fresh
+// analysis each time they click Fetch. The 48h ToolResult cache would
+// return the same verdict on every scan and silently skip credit
+// charging — that's the "same result / credits not draining" leak
+// this flag closes. The underlying provider-primitive cache (in
+// CachedAdapter) still applies, so we don't burn provider budget
+// within a single request.
 
 import type { SocialTool } from "../types";
 import type { CommentItem, Post } from "@/core/data/adapter";
@@ -19,23 +25,31 @@ import { analyzeCommentQuality } from "./comment-quality";
 import { analyzePaidSignals } from "./paid-signals";
 import { probeAdLibrary } from "./ad-library";
 import { computeAnalysis } from "./scoring";
+import { analyzeCommentBursts } from "./burst-detection";
+import { analyzeCommentLanguage } from "./language-analysis";
+import { analyzeProfileSignals } from "./profile-signals";
+import { computeVerdict } from "./verdict";
+import { computeBrandFit } from "./brand-fit";
+import { enrichCommentAudience } from "@/core/data/audience-enrichment";
 
-const RECENT_POST_COUNT = 12;
-const COMMENT_SAMPLE_SIZE = 100;
+const RECENT_POST_COUNT = 24;              // was 12 — bigger baseline for outlier detection
+const COMMENT_SAMPLE_SIZE = 120;
+const AUDIENCE_ENRICHMENT_SAMPLE = 15;
 
 export const authenticityAnalyzer: SocialTool = {
   id: "authenticity-analyzer",
   name: "Authenticity Analyzer",
   intentLabel: "Real, fake, or paid? Decode the reach.",
   blurb:
-    "Multi-signal analysis of a creator's authenticity — audience quality, engagement authenticity, organic reach strength, paid content, and fraud risk. High reach beyond the follower base is treated as a positive signal, never as fake evidence.",
+    "Multi-signal analysis of a creator's authenticity — audience quality, engagement authenticity, organic reach strength, paid content, and fraud risk. Ships a Final Verdict + Brand Deal Fit call at the top. High reach beyond the follower base is treated as a positive signal, never as fake evidence.",
   platforms: ["instagram"],
   phase: 0,
+  skipCache: true,   // fresh scan per submit — see file header
   seo: {
     slug: "authenticity-analyzer",
     title: "Instagram Authenticity Analyzer — Real, Fake, or Paid Reach",
     description:
-      "Decode any Instagram creator: audience authenticity, engagement quality, organic reach strength, paid-content detection, and fraud risk — with explanations for every score.",
+      "Decode any Instagram creator: audience authenticity, engagement quality, organic reach strength, paid-content detection, fraud risk, plus a final verdict and brand-deal fit — with explanations for every score.",
   },
   async run({ platform, handle, data }) {
     if (platform !== "instagram") {
@@ -56,8 +70,6 @@ export const authenticityAnalyzer: SocialTool = {
     ]);
 
     // ── 2. Per-post paid-signal extraction ──────────────────────────
-    // Runs on every post's caption. Cheap — pure regex work — so we
-    // process all fetched posts, not just a few.
     const paidSignalsPerPost = posts.map((p) =>
       analyzePaidSignals(p.caption ?? "", detectPaidPartnershipFlag(p)),
     );
@@ -65,20 +77,66 @@ export const authenticityAnalyzer: SocialTool = {
     // ── 3. Comment-quality aggregate ────────────────────────────────
     const commentQuality = analyzeCommentQuality(commentsResult.comments);
 
-    // ── 4. Scoring — pure function, no more fetches ─────────────────
+    // ── 4. v2 depth signals — all defensive, never throw ────────────
+    const burst = safelyRun(() => analyzeCommentBursts(commentsResult.comments), null);
+    const captionForLanguage = commentsResult.post?.caption ?? null;
+    const language = safelyRun(
+      () => analyzeCommentLanguage(commentsResult.comments, captionForLanguage),
+      null,
+    );
+    const profileSignals = safelyRun(() => analyzeProfileSignals(profile), null);
+
+    // Audience enrichment — sample commenter profiles for bio+avatar
+    // completeness. Cheap; skips face analysis. Fails silently — a
+    // provider blip on this call shouldn't kill the whole scan.
+    let audienceCompletenessPct: number | null = null;
+    let audienceSampleSize = 0;
+    if (commentsResult.comments.length > 0) {
+      try {
+        const aud = await enrichCommentAudience(platform, data, commentsResult.comments, {
+          maxProfiles: AUDIENCE_ENRICHMENT_SAMPLE,
+          runFaceAnalysis: false,
+        });
+        audienceCompletenessPct = aud.profileCompletenessPct;
+        audienceSampleSize = aud.profilesFetched;
+      } catch (e) {
+        console.warn(
+          "[authenticity-analyzer] audience enrichment failed:",
+          e instanceof Error ? e.message : e,
+        );
+      }
+    }
+
+    // ── 5. Scoring — pure function, no more fetches ─────────────────
     const analysis = computeAnalysis({
       profile,
       posts,
       commentQuality,
       paidSignalsPerPost,
       adLibrary,
+      burst,
+      language,
+      profileSignals,
+      audienceCompletenessPct,
+      audienceSampleSize,
     });
 
-    // ── 5. Package as ToolResult ────────────────────────────────────
-    // Everything in `free` — this tool is a premium experience whose
-    // value is the score explanation itself. Gating individual reasons
-    // behind a blur would gut the utility. Paywall on scan quota,
-    // not on the payload.
+    // ── 6. Final Verdict + Brand Deal Fit ───────────────────────────
+    // Both derived from the completed analysis. Kept OUT of the
+    // scoring engine so users can see the raw scores unaltered.
+    const emptyProfileSignals =
+      profileSignals ?? {
+        isBusinessAccount: false,
+        businessCategory: null,
+        bioCommercialHits: [],
+        bioBrandOfficialHit: false,
+        commercialIntentScore: 0,
+        reasons: [],
+      };
+    const verdict = computeVerdict(analysis, emptyProfileSignals);
+    const brandFit = computeBrandFit(profile, analysis, emptyProfileSignals);
+
+    // ── 7. Package as ToolResult ────────────────────────────────────
     return {
       toolId: "authenticity-analyzer",
       platform,
@@ -94,6 +152,10 @@ export const authenticityAnalyzer: SocialTool = {
         avatarUrl: profile.avatarUrl,
         displayName: profile.displayName,
 
+        // v2 headline outputs — the two decisions a brand actually cares about
+        verdict,
+        brandFit,
+
         // Five sub-scores
         audience: analysis.audience,
         engagement: analysis.engagement,
@@ -101,7 +163,7 @@ export const authenticityAnalyzer: SocialTool = {
         paid: analysis.paid,
         fraud: analysis.fraud,
 
-        // Data-source transparency
+        // Data-source transparency for the Ad Library probe
         adLibraryStatus: adLibrary
           ? {
               available: adLibrary.available,
@@ -118,8 +180,43 @@ export const authenticityAnalyzer: SocialTool = {
               note: "Ad Library probe skipped",
             },
 
-        // Sampled paid-signal detail for the UI to show WHY a post
-        // was flagged. Keep just the ones with score > 0.
+        // v2 depth-signal telemetry — surfaced so users can see WHY
+        burstAnalysis: burst
+          ? {
+              available: burst.available,
+              windowMinutes: burst.windowMinutes,
+              peakConcentrationPct: burst.peakConcentrationPct,
+              score: burst.score,
+              flag: burst.flag,
+            }
+          : null,
+        languageAnalysis: language
+          ? {
+              available: language.available,
+              captionScript: language.captionScript,
+              dominantCommentScript: language.dominantCommentScript,
+              dominantSharePct: language.dominantSharePct,
+              mismatch: language.mismatch,
+              score: language.score,
+              flag: language.flag,
+            }
+          : null,
+        profileSignals: profileSignals
+          ? {
+              isBusinessAccount: profileSignals.isBusinessAccount,
+              businessCategory: profileSignals.businessCategory,
+              bioCommercialHits: profileSignals.bioCommercialHits,
+              bioBrandOfficialHit: profileSignals.bioBrandOfficialHit,
+              commercialIntentScore: profileSignals.commercialIntentScore,
+              reasons: profileSignals.reasons,
+            }
+          : null,
+        audienceEnrichment: {
+          completenessPct: audienceCompletenessPct,
+          sampleSize: audienceSampleSize,
+        },
+
+        // Sampled paid-signal detail
         paidSignalSamples: paidSignalsPerPost
           .map((p, i) => ({
             postIndex: i,
@@ -155,6 +252,21 @@ export const authenticityAnalyzer: SocialTool = {
     };
   },
 };
+
+// Small helper: run a synchronous side-effect-free heuristic that we don't
+// want to blow up the whole tool if it throws. All the v2 depth signals
+// are best-effort — a bug in one shouldn't kill the four other signals.
+function safelyRun<T>(fn: () => T, fallback: T): T {
+  try {
+    return fn();
+  } catch (e) {
+    console.warn(
+      "[authenticity-analyzer] depth-signal failed, continuing:",
+      e instanceof Error ? e.message : e,
+    );
+    return fallback;
+  }
+}
 
 // Instagram's public data returns paid-partnership signal in a few
 // shapes depending on the endpoint. Ensembledata's normalized Post

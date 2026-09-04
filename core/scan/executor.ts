@@ -50,7 +50,11 @@ export async function executeScan(args: ExecuteScanArgs): Promise<ExecuteScanRes
 
   const supa = supabaseService();
   const hasParams = params && Object.keys(params).length > 0;
-  const bust = !!args.bustCache;
+  // A tool with skipCache=true opts out of the 48h ToolResult cache —
+  // treated the same as ?fresh=1 for cache purposes. Primitive-adapter
+  // caching (CachedAdapter) still applies, so we don't burn provider
+  // budget within a single request.
+  const bust = !!args.bustCache || !!tool.skipCache;
 
   // 1) cache lookup — cache is per-tool by scan key, only used for default
   //    params AND when the caller didn't ask to bust cache.
@@ -75,8 +79,9 @@ export async function executeScan(args: ExecuteScanArgs): Promise<ExecuteScanRes
     await recordProfileSnapshot(supa, platform, handle, followers, following);
   }
 
-  // 4) cache write-back (default-params runs only)
-  if (!hasParams) {
+  // 4) cache write-back (default-params runs only, and only when this
+  //    tool participates in the ToolResult cache).
+  if (!hasParams && !tool.skipCache) {
     await writeCachedToolResult(supa, platform, handle, args.toolId, result);
   }
 

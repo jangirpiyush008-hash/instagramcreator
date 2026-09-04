@@ -9,8 +9,10 @@ import { BLURRED_PLACEHOLDER } from "@/core/constants";
 // primitives as IG/TT). Keeps disclosures visible without hiding them
 // in the fine-print methodology block.
 export function CaveatBanner({ children }: { children: React.ReactNode }) {
+  // Theme-aware amber. Was text-amber-100 only, which is nearly white on the
+  // light-mode background — invisible for every caveat this tool ever emits.
   return (
-    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100 leading-relaxed">
+    <div className="rounded-lg border border-amber-500/40 bg-amber-500/15 dark:bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-100 leading-relaxed">
       {children}
     </div>
   );

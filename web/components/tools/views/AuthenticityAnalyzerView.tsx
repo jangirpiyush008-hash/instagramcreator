@@ -66,6 +66,55 @@ interface AdLibraryStatus {
   note: string | null;
 }
 
+interface Verdict {
+  label: string;
+  tone: "positive" | "neutral" | "warning" | "danger";
+  summary: string;
+  supportingScores: string[];
+}
+
+interface BrandFit {
+  structure: string;
+  tone: "positive" | "neutral" | "warning" | "danger";
+  headline: string;
+  reasoning: string;
+  estimatedRateInrRange: string | null;
+  creatorTier: string;
+  cautionNotes: string[];
+}
+
+interface BurstAnalysis {
+  available: boolean;
+  windowMinutes: number | null;
+  peakConcentrationPct: number | null;
+  score: number;
+  flag: string | null;
+}
+
+interface LanguageAnalysis {
+  available: boolean;
+  captionScript: string | null;
+  dominantCommentScript: string | null;
+  dominantSharePct: number | null;
+  mismatch: boolean;
+  score: number;
+  flag: string | null;
+}
+
+interface ProfileSignalsData {
+  isBusinessAccount: boolean;
+  businessCategory: string | null;
+  bioCommercialHits: string[];
+  bioBrandOfficialHit: boolean;
+  commercialIntentScore: number;
+  reasons: string[];
+}
+
+interface AudienceEnrichment {
+  completenessPct: number | null;
+  sampleSize: number;
+}
+
 interface Props {
   platform: Platform;
   handle: string;
@@ -93,6 +142,14 @@ export function AuthenticityAnalyzerView({ handle, data }: Props) {
   const caveats = (data?.caveats as string[] | undefined) ?? [];
   const methodology = data?.methodology as string | undefined;
 
+  // v2 depth data
+  const verdict = data?.verdict as Verdict | undefined;
+  const brandFit = data?.brandFit as BrandFit | undefined;
+  const burst = data?.burstAnalysis as BurstAnalysis | null | undefined;
+  const languageAnalysis = data?.languageAnalysis as LanguageAnalysis | null | undefined;
+  const profSignals = data?.profileSignals as ProfileSignalsData | null | undefined;
+  const audienceEnr = data?.audienceEnrichment as AudienceEnrichment | undefined;
+
   return (
     <div className="space-y-6">
       {/* HEADER: Decode Score */}
@@ -106,10 +163,16 @@ export function AuthenticityAnalyzerView({ handle, data }: Props) {
         verified={verified}
       />
 
+      {/* HERO: Final Verdict — the one-line answer */}
+      {verdict && <VerdictHero verdict={verdict} />}
+
+      {/* HERO: Brand Deal Fit — collab structure recommendation */}
+      {brandFit && <BrandFitHero fit={brandFit} />}
+
       {/* Note about MVP scope — profile-input only for now */}
       <CaveatBanner>
         <strong>Analyzing profile @{handle}.</strong> This scan aggregates the
-        creator&apos;s last {postsAnalyzed || 12} posts and their comment
+        creator&apos;s last {postsAnalyzed || 24} posts and their comment
         stream. Post-specific reel analysis (paste one reel URL, score that
         reel only) ships in the next release.
       </CaveatBanner>
@@ -213,16 +276,67 @@ export function AuthenticityAnalyzerView({ handle, data }: Props) {
         </section>
       )}
 
-      {/* AD LIBRARY STATUS */}
+      {/* v2 DEPTH SIGNALS — burst / language / profile detail */}
+      {(burst?.available || languageAnalysis?.available || (profSignals && profSignals.commercialIntentScore > 0) || (audienceEnr && audienceEnr.sampleSize >= 5)) && (
+        <section>
+          <SectionTitle hint="Extra corroborating signals we ran against this account">
+            Depth signals
+          </SectionTitle>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {audienceEnr && audienceEnr.sampleSize >= 5 && (
+              <DepthCard
+                title="Commenter profile completeness"
+                value={audienceEnr.completenessPct !== null ? `${audienceEnr.completenessPct.toFixed(0)}%` : "—"}
+                sub={`${audienceEnr.sampleSize} sampled · healthy 60%+`}
+                tone={
+                  audienceEnr.completenessPct === null ? "neutral" :
+                  audienceEnr.completenessPct >= 60 ? "positive" :
+                  audienceEnr.completenessPct >= 30 ? "warning" : "danger"
+                }
+              />
+            )}
+            {burst?.available && (
+              <DepthCard
+                title="Comment timing"
+                value={burst.peakConcentrationPct !== null ? `${burst.peakConcentrationPct.toFixed(0)}%` : "—"}
+                sub={burst.flag ?? "in peak window — natural distribution"}
+                tone={burst.score >= 80 ? "positive" : burst.score >= 60 ? "neutral" : "warning"}
+              />
+            )}
+            {languageAnalysis?.available && (
+              <DepthCard
+                title="Comment language"
+                value={languageAnalysis.dominantCommentScript ?? "—"}
+                sub={
+                  languageAnalysis.mismatch
+                    ? `${languageAnalysis.dominantSharePct?.toFixed(0)}% vs caption in ${languageAnalysis.captionScript} — mismatch`
+                    : `${languageAnalysis.dominantSharePct?.toFixed(0)}% dominance — matches caption`
+                }
+                tone={languageAnalysis.mismatch ? (languageAnalysis.score < 60 ? "warning" : "neutral") : "positive"}
+              />
+            )}
+            {profSignals && (profSignals.commercialIntentScore > 0 || profSignals.businessCategory) && (
+              <DepthCard
+                title="Profile shape"
+                value={profSignals.bioBrandOfficialHit ? "Brand-owned" : profSignals.commercialIntentScore >= 40 ? "Commercial" : profSignals.commercialIntentScore >= 20 ? "Mixed" : "Creator"}
+                sub={profSignals.businessCategory ?? (profSignals.bioCommercialHits[0] ?? "no commercial bio signals")}
+                tone="neutral"
+              />
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* AD LIBRARY STATUS — theme-aware colors so light mode is readable */}
       {adLibrary && (
         <div
           className={cn(
             "rounded-xl border px-4 py-3 text-sm",
             adLibrary.available && adLibrary.hasActiveAds
-              ? "border-amber-500/30 bg-amber-500/10 text-amber-100"
+              ? "border-amber-500/40 bg-amber-500/15 dark:bg-amber-500/10 text-amber-900 dark:text-amber-100"
               : adLibrary.available
-                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
-                : "border-border bg-card/40 text-muted-foreground",
+                ? "border-emerald-500/40 bg-emerald-500/15 dark:bg-emerald-500/10 text-emerald-900 dark:text-emerald-100"
+                : "border-border bg-card/60 text-foreground/70",
           )}
         >
           <span className="font-medium text-foreground">Meta Ad Library:</span>{" "}
@@ -272,10 +386,18 @@ function DecodeHeader({
   verified: boolean;
 }) {
   const scoreColor =
-    score >= 85 ? "text-emerald-300" : score >= 70 ? "text-emerald-400" : score >= 55 ? "text-amber-300" : score >= 35 ? "text-amber-400" : "text-red-400";
+    score >= 85
+      ? "text-emerald-600 dark:text-emerald-300"
+      : score >= 70
+        ? "text-emerald-700 dark:text-emerald-400"
+        : score >= 55
+          ? "text-amber-600 dark:text-amber-300"
+          : score >= 35
+            ? "text-amber-700 dark:text-amber-400"
+            : "text-red-600 dark:text-red-400";
 
   const ringColor =
-    score >= 85 ? "stroke-emerald-400" : score >= 70 ? "stroke-emerald-500" : score >= 55 ? "stroke-amber-400" : score >= 35 ? "stroke-amber-500" : "stroke-red-500";
+    score >= 85 ? "stroke-emerald-500 dark:stroke-emerald-400" : score >= 70 ? "stroke-emerald-500" : score >= 55 ? "stroke-amber-500 dark:stroke-amber-400" : score >= 35 ? "stroke-amber-600 dark:stroke-amber-500" : "stroke-red-500";
 
   // Progress ring: circumference = 2πr; offset = C * (1 - pct/100)
   const r = 44;
@@ -370,7 +492,13 @@ function ScoreCard({
           </div>
           <div className={cn(
             "mt-1 text-sm font-medium",
-            score >= 70 ? "text-emerald-300" : score >= 55 ? "text-amber-300" : score >= 35 ? "text-amber-400" : "text-red-300",
+            score >= 70
+              ? "text-emerald-600 dark:text-emerald-300"
+              : score >= 55
+                ? "text-amber-600 dark:text-amber-300"
+                : score >= 35
+                  ? "text-amber-700 dark:text-amber-400"
+                  : "text-red-600 dark:text-red-300",
             isInsufficient && "text-muted-foreground",
           )}>
             {label}
@@ -379,7 +507,7 @@ function ScoreCard({
         <SourceBadge source={source} confidence={confidence} />
       </div>
       {note && (
-        <div className="mt-3 text-[11px] leading-relaxed text-emerald-300/80 bg-emerald-500/5 border border-emerald-500/20 rounded-md px-2 py-1.5">
+        <div className="mt-3 text-[11px] leading-relaxed text-emerald-800 dark:text-emerald-300/80 bg-emerald-500/10 dark:bg-emerald-500/5 border border-emerald-500/30 dark:border-emerald-500/20 rounded-md px-2 py-1.5">
           {note}
         </div>
       )}
@@ -400,10 +528,10 @@ function ScoreCard({
 // ─── Paid content card (special layout — classification, not a 0-100) ──
 function PaidCard({ paid, adLibrary }: { paid: PaidScore; adLibrary?: AdLibraryStatus }) {
   const badgeClass = {
-    "Verified Paid": "bg-purple-500/15 text-purple-200 border-purple-500/30",
-    "Likely Paid": "bg-amber-500/15 text-amber-200 border-amber-500/30",
-    "Likely Organic": "bg-emerald-500/15 text-emerald-200 border-emerald-500/30",
-    "Unknown": "bg-muted text-muted-foreground border-border",
+    "Verified Paid": "bg-purple-500/15 text-purple-800 dark:text-purple-200 border-purple-500/40",
+    "Likely Paid": "bg-amber-500/15 text-amber-800 dark:text-amber-200 border-amber-500/40",
+    "Likely Organic": "bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border-emerald-500/40",
+    "Unknown": "bg-muted text-foreground/70 border-border",
   }[paid.classification];
 
   return (
@@ -484,10 +612,10 @@ function FraudCard({ fraud }: { fraud: FraudScore }) {
 // ─── Data-source badge ───────────────────────────────────────────────
 function SourceBadge({ source, confidence }: { source: DataSource; confidence: number }) {
   const map = {
-    verified: { label: "Verified", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
-    calculated: { label: "Calculated", cls: "bg-cyan-500/15 text-cyan-300 border-cyan-500/30" },
-    inferred: { label: "Inferred", cls: "bg-amber-500/15 text-amber-200 border-amber-500/30" },
-    unknown: { label: "Unknown", cls: "bg-muted text-muted-foreground border-border" },
+    verified: { label: "Verified", cls: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-500/40" },
+    calculated: { label: "Calculated", cls: "bg-cyan-500/15 text-cyan-800 dark:text-cyan-300 border-cyan-500/40" },
+    inferred: { label: "Inferred", cls: "bg-amber-500/15 text-amber-800 dark:text-amber-200 border-amber-500/40" },
+    unknown: { label: "Unknown", cls: "bg-muted text-foreground/70 border-border" },
   }[source];
   return (
     <div className="text-right">
@@ -515,6 +643,140 @@ function MethodologyMiniCard() {
         behavior). Fraud fires only when engagement quality contradicts
         engagement volume, never on reach ratio alone.
       </p>
+    </div>
+  );
+}
+
+// ─── Final Verdict hero ─────────────────────────────────────────────
+function VerdictHero({ verdict }: { verdict: Verdict }) {
+  const toneClass = {
+    positive: "border-emerald-500/40 bg-emerald-500/10",
+    neutral: "border-blue-500/40 bg-blue-500/10",
+    warning: "border-amber-500/50 bg-amber-500/15",
+    danger: "border-red-500/50 bg-red-500/15",
+  }[verdict.tone];
+
+  const toneText = {
+    positive: "text-emerald-700 dark:text-emerald-300",
+    neutral: "text-blue-700 dark:text-blue-300",
+    warning: "text-amber-700 dark:text-amber-300",
+    danger: "text-red-700 dark:text-red-300",
+  }[verdict.tone];
+
+  const icon = {
+    positive: "✓",
+    neutral: "•",
+    warning: "!",
+    danger: "✕",
+  }[verdict.tone];
+
+  return (
+    <div className={cn("rounded-2xl border-2 p-5 sm:p-6", toneClass)}>
+      <div className="flex items-start gap-4">
+        <div
+          className={cn(
+            "shrink-0 h-12 w-12 rounded-full flex items-center justify-center text-xl font-bold",
+            verdict.tone === "positive" && "bg-emerald-500/20 text-emerald-700 dark:text-emerald-200",
+            verdict.tone === "neutral" && "bg-blue-500/20 text-blue-700 dark:text-blue-200",
+            verdict.tone === "warning" && "bg-amber-500/25 text-amber-800 dark:text-amber-200",
+            verdict.tone === "danger" && "bg-red-500/25 text-red-800 dark:text-red-200",
+          )}
+        >
+          {icon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+            Final Verdict
+          </div>
+          <div className={cn("text-xl sm:text-2xl font-bold mt-0.5", toneText)}>
+            {verdict.label}
+          </div>
+          <p className="mt-2 text-sm text-foreground/80 leading-relaxed">{verdict.summary}</p>
+          {verdict.supportingScores.length > 0 && (
+            <ul className="mt-3 space-y-1 text-xs text-foreground/60">
+              {verdict.supportingScores.map((s, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="text-foreground/40 shrink-0">·</span>
+                  <span>{s}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Brand Deal Fit hero ────────────────────────────────────────────
+function BrandFitHero({ fit }: { fit: BrandFit }) {
+  const toneClass = {
+    positive: "border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 to-card/40",
+    neutral: "border-blue-500/30 bg-gradient-to-br from-blue-500/5 to-card/40",
+    warning: "border-amber-500/40 bg-gradient-to-br from-amber-500/10 to-card/40",
+    danger: "border-red-500/40 bg-gradient-to-br from-red-500/10 to-card/40",
+  }[fit.tone];
+
+  return (
+    <div className={cn("rounded-2xl border p-5 sm:p-6", toneClass)}>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex-1 min-w-0">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+            Brand Deal Fit · {fit.creatorTier} tier
+          </div>
+          <div className="mt-1 text-lg sm:text-xl font-bold text-foreground">{fit.structure}</div>
+          <p className="mt-2 text-sm text-foreground/80 leading-relaxed">{fit.headline}</p>
+          <p className="mt-2 text-xs text-foreground/60 leading-relaxed">{fit.reasoning}</p>
+          {fit.cautionNotes.length > 0 && (
+            <ul className="mt-3 space-y-1 text-xs text-amber-800 dark:text-amber-200">
+              {fit.cautionNotes.map((n, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="shrink-0">⚠</span>
+                  <span>{n}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {fit.estimatedRateInrRange && (
+          <div className="rounded-xl border border-border bg-card/70 px-4 py-3 min-w-[220px]">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+              Rate benchmark (estimate)
+            </div>
+            <div className="mt-1 text-base font-semibold text-foreground">{fit.estimatedRateInrRange}</div>
+            <div className="mt-1 text-[10px] text-muted-foreground">
+              India market · vary by niche, geo, deliverable
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Depth signal card (small tile) ─────────────────────────────────
+function DepthCard({
+  title,
+  value,
+  sub,
+  tone,
+}: {
+  title: string;
+  value: string;
+  sub: string;
+  tone: "positive" | "neutral" | "warning" | "danger";
+}) {
+  const accent = {
+    positive: "border-l-emerald-500",
+    neutral: "border-l-blue-500",
+    warning: "border-l-amber-500",
+    danger: "border-l-red-500",
+  }[tone];
+  return (
+    <div className={cn("rounded-xl border border-border border-l-4 bg-card/60 p-4", accent)}>
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{title}</div>
+      <div className="mt-1 text-lg font-semibold tabular-nums">{value}</div>
+      <div className="mt-1 text-[11px] text-foreground/60 leading-snug">{sub}</div>
     </div>
   );
 }

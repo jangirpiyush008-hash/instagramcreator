@@ -35,6 +35,10 @@ const GENERIC_TOKENS = new Set([
   "so nice", "so cool", "so cute", "cute", "hot", "fire",
   "lit", "goat", "king", "queen", "legend", "iconic",
   "gorgeous", "stunning", "handsome", "pretty", "sexy",
+  // Emoji entries retained for corner cases where a comment has one emoji
+  // plus a trailing letter — normalizeForGeneric strips whitespace but not
+  // the letter, so "❤️ x" wouldn't match. Pure emoji-only comments are
+  // filtered OUT of this bucket now — see the emojiOnly guard below.
   "❤", "❤️", "🔥", "😍", "🥰", "👏", "👍", "💯",
   "goals", "vibes", "mood", "same", "facts", "true",
   "nice one", "well done", "keep it up", "keep going",
@@ -81,19 +85,29 @@ function looksBotty(username: string): boolean {
   return false;
 }
 
-// Repetition detector: how many comments are exact-string duplicates of
-// another comment in the sample (after normalization)? Farm services
-// hand the same script to hundreds of accounts.
-function repetitionPct(normalized: string[]): number {
-  if (normalized.length < 4) return 0;
-  const counts = new Map<string, number>();
-  for (const n of normalized) {
+// Repetition detector: how many WORD-BEARING comments are exact-string
+// duplicates of another word-bearing comment (after normalization)?
+// Farm services hand the same script to hundreds of accounts.
+//
+// v2 fix: exclude emoji-only comments from BOTH numerator and denominator.
+// Their normalized form is a raw emoji ("🔥", "❤️") — so 20 legitimate
+// fire-emoji reactions from real fans would look like "100% duplicates"
+// and pin the fraud signal to Elevated on every clean account. Emoji-only
+// spam is already captured by emojiOnlyPct — no need to double-count it.
+function repetitionPct(normalized: string[], emojiOnlyMask: boolean[]): number {
+  const wordBearing: string[] = [];
+  for (let i = 0; i < normalized.length; i++) {
+    if (emojiOnlyMask[i]) continue;
+    const n = normalized[i]!;
     if (n.length === 0) continue;
-    counts.set(n, (counts.get(n) ?? 0) + 1);
+    wordBearing.push(n);
   }
+  if (wordBearing.length < 4) return 0;
+  const counts = new Map<string, number>();
+  for (const n of wordBearing) counts.set(n, (counts.get(n) ?? 0) + 1);
   let repeats = 0;
   for (const c of counts.values()) if (c >= 2) repeats += c;
-  return (repeats / normalized.length) * 100;
+  return (repeats / wordBearing.length) * 100;
 }
 
 export function analyzeCommentQuality(comments: CommentItem[]): CommentQualitySignal {
@@ -116,21 +130,26 @@ export function analyzeCommentQuality(comments: CommentItem[]): CommentQualitySi
   let botNameCount = 0;
   let lengthSum = 0;
   const normalized: string[] = [];
+  const emojiOnlyMask: boolean[] = [];
 
   for (const c of comments) {
     const text = (c.text ?? "").trim();
     lengthSum += text.length;
-    if (isEmojiOnly(text)) emojiOnlyCount += 1;
+    const emojiOnly = isEmojiOnly(text);
+    if (emojiOnly) emojiOnlyCount += 1;
+    emojiOnlyMask.push(emojiOnly);
     const norm = normalizeForGeneric(text);
     normalized.push(norm);
-    if (GENERIC_TOKENS.has(norm)) genericCount += 1;
+    // Generic-praise bucket ALSO excludes emoji-only (already scored). Prevents
+    // the same emoji comment being counted 3× as emoji + generic + repetitive.
+    if (!emojiOnly && GENERIC_TOKENS.has(norm)) genericCount += 1;
     if (looksBotty(c.username)) botNameCount += 1;
   }
 
   const genericPct = (genericCount / total) * 100;
   const emojiOnlyPct = (emojiOnlyCount / total) * 100;
   const botNamePct = (botNameCount / total) * 100;
-  const repetitivePct = repetitionPct(normalized);
+  const repetitivePct = repetitionPct(normalized, emojiOnlyMask);
   const avgLength = lengthSum / total;
 
   // Score starts at 100 and drops per red flag. Weights tuned against

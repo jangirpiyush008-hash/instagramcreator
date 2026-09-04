@@ -21,6 +21,12 @@ export interface SocialTool {
   platforms: Platform[];
   phase: 0 | 1 | 2 | 3;       // 0 = shipped; 1/2/3 = roadmap (intent picker shows badge)
   seo: { slug: string; title: string; description: string };
+  // Opt out of the 48h ToolResult cache. Underlying provider primitive
+  // cache (CachedAdapter) still applies. Use for tools where users expect
+  // a fresh read every submit (e.g. Authenticity Analyzer's decode score
+  // should re-run on every click, not return the same cached verdict for
+  // 48 hours). Default is false — the standard cache path.
+  skipCache?: boolean;
   // pure logic — reads ONLY from the DataAdapter. No network calls of its own.
   run(args: {
     platform: Platform;
