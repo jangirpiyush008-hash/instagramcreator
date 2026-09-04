@@ -30,6 +30,7 @@ export const CREDIT_COSTS: Record<string, number> = {
 
   // Deep / high-cost
   "recent-posts": 15,
+  "authenticity-analyzer": 15,
   "gender-split": 25,
 
   // Bundled endpoint — runs every tool but shares primitives via cache, so

@@ -12,6 +12,7 @@ import { unfollowerTracker } from "./unfollower-tracker";
 import { fakeFollower } from "./fake-follower";
 import { genderSplit } from "./gender-split";
 import { recentPosts } from "./recent-posts";
+import { authenticityAnalyzer } from "./authenticity-analyzer";
 
 // Add a tool: drop a file in core/tools/<id>/index.ts that implements SocialTool,
 // import it here, and append to TOOLS. The intent picker, scan API, paywall gating,
@@ -21,6 +22,7 @@ import { recentPosts } from "./recent-posts";
 // with a "Coming soon" badge; their run() throws NotImplementedError which the
 // scan API converts to a clean 501 response.
 export const TOOLS: readonly SocialTool[] = [
+  authenticityAnalyzer,
   engagementRate,
   usernameChecker,
   bannedHashtag,

@@ -13,6 +13,7 @@ import { UnfollowerTrackerView } from "./views/UnfollowerTrackerView";
 import { FakeFollowerView } from "./views/FakeFollowerView";
 import { GenderSplitView } from "./views/GenderSplitView";
 import { RecentPostsView } from "./views/RecentPostsView";
+import { AuthenticityAnalyzerView } from "./views/AuthenticityAnalyzerView";
 import type { Platform } from "@/core/types";
 
 export type ToolParamValue = string | number | boolean;
@@ -34,6 +35,7 @@ export type ToolView = (props: ToolViewProps) => ReactElement;
 
 // Map toolId → result-view component. Adding a tool means adding a row here.
 export const VIEWS: Record<string, ToolView> = {
+  "authenticity-analyzer": AuthenticityAnalyzerView,
   "engagement-rate": EngagementRateView,
   "username-checker": UsernameCheckerView,
   "banned-hashtag": BannedHashtagView,

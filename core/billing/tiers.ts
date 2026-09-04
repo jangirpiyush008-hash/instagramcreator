@@ -71,9 +71,9 @@ export const CONSUMER_TIERS: Record<string, ConsumerTier> = {
     scansPerMonth: 20,
     fullReport: false,
     watermarkFree: false,
-    toolIds: ["engagement-rate", "username-checker", "thumbnail-downloader", "banned-hashtag"],
-    blurb: "Try DecodeCreator with 20 scans a month across 4 tools. No card required.",
-    highlights: ["20 scans / month", "4 core tools", "All 3 platforms"],
+    toolIds: ["authenticity-analyzer", "engagement-rate", "username-checker", "thumbnail-downloader", "banned-hashtag"],
+    blurb: "Try DecodeCreator with 20 scans a month across 5 tools including Authenticity Analyzer. No card required.",
+    highlights: ["20 scans / month", "5 core tools incl. Authenticity Analyzer", "All 3 platforms"],
     ctaLabel: "Sign up free",
   }),
   starter: tier({

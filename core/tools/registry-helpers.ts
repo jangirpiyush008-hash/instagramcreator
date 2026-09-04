@@ -11,13 +11,18 @@ export function getAllToolsForPlatform(platform: Platform): string[] {
 // source of truth so the sidebar order matches what the docs page and
 // full-report bundle emit. Only lists tool IDs — the shell looks up
 // name/slug/blurb via getTool() when it renders.
-export type ToolCategory = "user-data" | "media-data" | "discovery";
+export type ToolCategory = "authenticity" | "user-data" | "media-data" | "discovery";
 
 export const TOOL_CATEGORIES: {
   id: ToolCategory;
   label: string;
   toolIds: string[];
 }[] = [
+  {
+    id: "authenticity",
+    label: "Authenticity",
+    toolIds: ["authenticity-analyzer"],
+  },
   {
     id: "user-data",
     label: "User Data",
